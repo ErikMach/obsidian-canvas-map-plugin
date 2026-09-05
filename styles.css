@@ -6,9 +6,6 @@
     display: none;
 }
 
-.cmp-map-pin {
-	z-index: 1000 !important;
-}
 .cmp-map-pin:before {
 	content: "";
 	position: relative;

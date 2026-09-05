@@ -309,7 +309,7 @@ console.log(mapPin);
 		return;
 	}
 	Object.defineProperty(parent, "childMapPins", {value: new Set([mapPin])});
-	let {x, y, width, height} = parent;
+	let {x, y, width, height, zIndex} = parent;
 	Object.defineProperty(parent, "x", {
 		get() {return x;},
 		set(n) {
@@ -352,6 +352,17 @@ console.log(mapPin);
 				this.canvas.markMoved(c);
 			});
 			height = n;
+		}
+	});
+	Object.defineProperty(parent, "zIndex", {
+		get() {return zIndex;},
+		set(n) {
+			if (zIndex === n) return;
+			this.childMapPins.forEach(c => {
+				c.zIndex = n + 1;
+				this.canvas.markMoved(c);
+			});
+			zIndex = n;
 		}
 	});
 };
