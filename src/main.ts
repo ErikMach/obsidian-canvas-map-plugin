@@ -21,7 +21,7 @@ export default class CanvasMapPinPlugin extends Plugin {
 	async onload() {
 		await this.loadSettings();
 
-		window.mapPinSubtype = "canvas-map-pin-plugin-map-pin-applwe";
+		window.mapPinSubtype = "map-pin";
 		window.mapPinSize = 60;
 		
 		this.registerEvent(app.workspace.on("active-leaf-change", (leaf) => {
@@ -30,18 +30,32 @@ export default class CanvasMapPinPlugin extends Plugin {
 			if (!canvas.mapPinned) {
 				canvas.mapPinned = true;
 				console.log("Updating Canvas");
-new Promise((resolve, reject) => {
-	let data = canvas.data;
-	Object.defineProperty(canvas, "data", {
-		get(){return data;},
-		set(d) {if (d.nodes) {resolve()} data=d;}
-	});
-
-}).then(()=> canvas.nodes.values().filter(n=>n.unknownData.subtype===window.mapPinSubtype).forEach(pin=>mappinify(pin)) );
-
-				// re-shuffle the canvas
-				canvas.nodeInteractionLayer.setTarget = function (e){if(e?.unknownData.subtype===mapPinSubtype){return;}this.target!==e&&(this.target=e,this.render())};
-				
+				// only reliable way to await the canvas.nodes being populated
+				new Promise((resolve, reject) => {
+					let data = canvas.data;
+					Object.defineProperty(canvas, "data", {
+						get() { return data; },
+						set(d) { d.nodes ? resolve() : {}; data=d; }
+					});
+				}).then(() => {
+					canvas
+						.nodes
+						.values()
+						.filter(node => node.unknownData.subtype === window.mapPinSubtype)
+						.forEach(pin => mappinify(pin));
+					// reset the data property
+					Object.defineProperty(canvas, "data", {
+						value: canvas.data,
+						writable: true,
+						configurable: true,
+						enumerable: true
+					});
+				});
+				// stop the nodeInteractionLayer from being placed over map pins
+				canvas.nodeInteractionLayer.setTarget = function (e) {
+					if (e?.unknownData.subtype === mapPinSubtype) return;
+					this.target !== e && (this.target = e, this.render())
+				};
 			}
 		}));
 
@@ -135,7 +149,7 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 
 		const mapPin = canvas.createFileNode({
                         pos: canvas.pointer,
-                        size: {width: mapPinSize, height: mapPinSize},
+                        size: { width: mapPinSize, height: mapPinSize },
                         file: mapPinTFile,
                         save: true,
                         focus: false
@@ -183,8 +197,8 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 			get() {	return pointerValue; },
 			set(v) {
 				pointerValue = v;
-				mapPin.x = +(v.x).toPrecision(3);
-				mapPin.y = +(v.y).toPrecision(3);
+				mapPin.x = v.x;
+				mapPin.y = v.y;
 				this.markMoved(mapPin);  // rerenders just this element in next frame ...I assume
 
 				const collision = dropZones.find(z => collides(z, mapPin.getBBox()));
