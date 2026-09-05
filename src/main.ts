@@ -24,6 +24,13 @@ export default class CanvasMapPinPlugin extends Plugin {
 		window.mapPinSubtype = "map-pin";
 		window.mapPinSize = 60;
 
+		window.mapPinFileNameTemplate = {
+			currentTemplateString: "map pin - %n",
+			generateMapPinFilename: function(name) {
+				return (this.currentTemplateString + ".md").split("%n").join(name);
+			}
+		};
+
 		this.registerEvent(app.workspace.on("active-leaf-change", (leaf) => {
 			const canvas = leaf.view.canvas;
 			if (!canvas) return;
@@ -137,7 +144,7 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 		// Add "Map Pin" media to Canvas
 		const canvas = this.app.workspace.activeLeaf.view.canvas;
 
-		const filename = "map-pin - " + name + ".md";
+		const filename = window.mapPinFileNameTemplate.generateMapPinFilename(name);
 
 		let mapPinTFile = app.vault.getAbstractFileByPath(filename);
 		if (!mapPinTFile) {
@@ -234,7 +241,6 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 			}
 			const offsetLeft = (mapPin.x - parentMap.x) / parentMap.width;
 			const offsetTop = (mapPin.y - parentMap.y) / parentMap.height;
-			console.log(parentMap, offsetLeft, offsetTop);
 			Object.assign(mapPin.unknownData, {
 				subtype: mapPinSubtype,
 				mapPinName: name,
