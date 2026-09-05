@@ -197,8 +197,8 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 			get() {	return pointerValue; },
 			set(v) {
 				pointerValue = v;
-				mapPin.x = v.x;
-				mapPin.y = v.y;
+				mapPin.x = Math.round(v.x);
+				mapPin.y = Math.round(v.y);
 				this.markMoved(mapPin);  // rerenders just this element in next frame ...I assume
 
 				const collision = dropZones.find(z => collides(z, mapPin.getBBox()));
@@ -309,7 +309,7 @@ console.log(mapPin);
 		return;
 	}
 	Object.defineProperty(parent, "childMapPins", {value: new Set([mapPin])});
-	let {x, y, width, height, zIndex} = parent;
+	let {x, y, width, height, renderedZIndex} = parent;
 	Object.defineProperty(parent, "x", {
 		get() {return x;},
 		set(n) {
@@ -354,15 +354,15 @@ console.log(mapPin);
 			height = n;
 		}
 	});
-	Object.defineProperty(parent, "zIndex", {
-		get() {return zIndex;},
+	Object.defineProperty(parent, "renderedZIndex", {
+		get() {return renderedZIndex;},
 		set(n) {
-			if (zIndex === n) return;
+			if (renderedZIndex === n) return;
 			this.childMapPins.forEach(c => {
 				c.zIndex = n + 1;
-				this.canvas.markMoved(c);
+				c.renderZIndex();
 			});
-			zIndex = n;
+			renderedZIndex = n;
 		}
 	});
 };
