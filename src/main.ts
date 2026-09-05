@@ -24,15 +24,6 @@ export default class CanvasMapPinPlugin extends Plugin {
 		window.mapPinSubtype = "map-pin";
 		window.mapPinSize = 60;
 
-/*
-				// ...or it has been initialised and...
-				canvas.nodes.size &&
-				// ...it contains map pins and...
-				canvas.nodes.values().find(node => node.unknownData.subtype === window.mapPinSubtype) &&
-				// ...the map pins haven't been initialised.
-				!canvas.nodes.values().find(node => node.unknownData.subtype === window.mapPinSubtype && node.mapPinned)
-*/
-
 		this.registerEvent(app.workspace.on("active-leaf-change", (leaf) => {
 			const canvas = leaf.view.canvas;
 			if (!canvas) return;
@@ -396,25 +387,3 @@ function mappinify(mapPin: Tfile) {
 		}
 	});
 };
-
-
-
-/* Canvas.createFileNode
-e.prototype.createFileNode = function(e) {
-                var t = e.pos
-                  , n = e.size
-                  , i = e.position
-                  , r = e.file
-                  , o = e.subpath
-                  , a = e.save
-                  , s = e.focus
-                  , l = new j7(this); // j7 returns a TFile
-                return n || (n = this.config.defaultFileNodeDimensions),
-                l.moveAndResize(R8(t, n, i)),
-                l.setFile(r, o),
-                this.addNode(l),
-                !1 !== a && this.requestSave(),
-                !1 !== s && this.selectOnly(l),
-                l // return the TFile
-            }
-*/
