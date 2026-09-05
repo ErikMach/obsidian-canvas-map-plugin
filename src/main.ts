@@ -23,34 +23,49 @@ export default class CanvasMapPinPlugin extends Plugin {
 
 		window.mapPinSubtype = "map-pin";
 		window.mapPinSize = 60;
-		
+
+/*
+				// ...or it has been initialised and...
+				canvas.nodes.size &&
+				// ...it contains map pins and...
+				canvas.nodes.values().find(node => node.unknownData.subtype === window.mapPinSubtype) &&
+				// ...the map pins haven't been initialised.
+				!canvas.nodes.values().find(node => node.unknownData.subtype === window.mapPinSubtype && node.mapPinned)
+*/
+
 		this.registerEvent(app.workspace.on("active-leaf-change", (leaf) => {
 			const canvas = leaf.view.canvas;
 			if (!canvas) return;
-			if (!canvas.mapPinned) {
-				canvas.mapPinned = true;
-				console.log("Updating Canvas");
-				// only reliable way to await the canvas.nodes being populated
-				new Promise((resolve, reject) => {
-					let data = canvas.data;
-					Object.defineProperty(canvas, "data", {
-						get() { return data; },
-						set(d) { d.nodes ? resolve() : {}; data=d; }
+			if (this.shouldModifyCanvas(canvas)) {
+				if (Object.isEmpty(canvas.data)) {
+					// only reliable way to await the canvas.nodes being populated
+					new Promise((resolve, reject) => {
+						let data = canvas.data;
+						Object.defineProperty(canvas, "data", {
+							get() { return data; },
+							set(d) { d.nodes ? resolve() : {}; data=d; }
+						});
+					}).then(() => {
+						canvas
+							.nodes
+							.values()
+							.filter(node => node.unknownData.subtype === window.mapPinSubtype)
+							.forEach(pin => mappinify(pin));
+						// reset the data property
+						Object.defineProperty(canvas, "data", {
+							value: canvas.data,
+							writable: true,
+							configurable: true,
+							enumerable: true
+						});
 					});
-				}).then(() => {
+				} else {
 					canvas
 						.nodes
 						.values()
 						.filter(node => node.unknownData.subtype === window.mapPinSubtype)
 						.forEach(pin => mappinify(pin));
-					// reset the data property
-					Object.defineProperty(canvas, "data", {
-						value: canvas.data,
-						writable: true,
-						configurable: true,
-						enumerable: true
-					});
-				});
+				}
 				// stop the nodeInteractionLayer from being placed over map pins
 				canvas.nodeInteractionLayer.setTarget = function (e) {
 					if (e?.unknownData.subtype === mapPinSubtype) return;
@@ -265,6 +280,22 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 			}))
 		}));
 	}
+
+	shouldModifyCanvas(canvas) {
+		// modify if...
+		return (
+			// ...canvas has no nodes (initialised for 1st time)
+			!canvas.nodes.size ||
+			(
+				// ...or it has been initialised and...
+				canvas.nodes.size &&
+				// ...it contains map pins and...
+				canvas.nodes.values().find(node => node.unknownData.subtype === window.mapPinSubtype) &&
+				// ...the map pins haven't been initialised.
+				canvas.nodes.values().find(node => node.unknownData.subtype === window.mapPinSubtype && !node.mapPinned)
+			)
+		);
+	}
 }
 
 class MapPinNameModal extends Modal {
@@ -298,7 +329,6 @@ class InterceptedNodeMap extends Map {
 }
 
 function mappinify(mapPin: Tfile) {
-console.log(mapPin);
 	mapPin.nodeEl.classList.add("cmp-map-pin");
 	mapPin.focus = () => {};
 	mapPin.blur = () => {};
