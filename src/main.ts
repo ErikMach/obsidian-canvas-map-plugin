@@ -237,6 +237,7 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 			console.log(parentMap, offsetLeft, offsetTop);
 			Object.assign(mapPin.unknownData, {
 				subtype: mapPinSubtype,
+				mapPinName: name,
 				parent: parentMap.id,
 				offsetTop: offsetTop,
 				offsetLeft: offsetLeft
@@ -321,6 +322,7 @@ class InterceptedNodeMap extends Map {
 
 function mappinify(mapPin: Tfile) {
 	mapPin.nodeEl.classList.add("cmp-map-pin");
+	mapPin.nodeEl.dataset.mapPinName = mapPin.unknownData.mapPinName;
 	mapPin.focus = () => {};
 	mapPin.blur = () => {};
 	mapPin.mapPinned = true;
