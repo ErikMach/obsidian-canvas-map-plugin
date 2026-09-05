@@ -331,6 +331,18 @@ function mappinify(mapPin: Tfile) {
 	mapPin.nodeEl.dataset.mapPinName = mapPin.unknownData.mapPinName;
 	mapPin.focus = () => {};
 	mapPin.blur = () => {};
+	mapPin.onClick = function() {
+		const preview = app.workspace.getLeftLeaf(false);
+		preview.setViewState({
+			type: 'markdown',
+			state: {
+				active: true,
+				mode: "source",
+				file: mapPin.filePath,
+			},
+		});
+		app.workspace.setActiveLeaf(preview);
+	};
 	mapPin.mapPinned = true;
 	const parent = mapPin.canvas.nodes.get(mapPin.unknownData.parent);
 	if (parent.childMapPins) {
