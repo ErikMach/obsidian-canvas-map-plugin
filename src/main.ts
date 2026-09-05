@@ -12,7 +12,7 @@ import 	* as obb from 'obsidian';
 import {
 	DEFAULT_SETTINGS,
 	MyPluginSettings,
-	SampleSettingTab,
+	CanvasMapPinSettingsTab,
 } from './settings';
 
 export default class CanvasMapPinPlugin extends Plugin {
@@ -22,14 +22,6 @@ export default class CanvasMapPinPlugin extends Plugin {
 		await this.loadSettings();
 
 		window.mapPinSubtype = "map-pin";
-		window.mapPinSize = 60;
-
-		window.mapPinFileNameTemplate = {
-			currentTemplateString: "map pin - %n",
-			generateMapPinFilename: function(name) {
-				return (this.currentTemplateString + ".md").split("%n").join(name);
-			}
-		};
 
 		this.registerEvent(app.workspace.on("active-leaf-change", (leaf) => {
 			const canvas = leaf.view.canvas;
@@ -44,11 +36,7 @@ export default class CanvasMapPinPlugin extends Plugin {
 							set(d) { d.nodes ? resolve() : {}; data=d; }
 						});
 					}).then(() => {
-						canvas
-							.nodes
-							.values()
-							.filter(node => node.unknownData.subtype === window.mapPinSubtype)
-							.forEach(pin => mappinify(pin));
+						modifyCanvasMapPins(canvas);
 						// reset the data property
 						Object.defineProperty(canvas, "data", {
 							value: canvas.data,
@@ -58,11 +46,7 @@ export default class CanvasMapPinPlugin extends Plugin {
 						});
 					});
 				} else {
-					canvas
-						.nodes
-						.values()
-						.filter(node => node.unknownData.subtype === window.mapPinSubtype)
-						.forEach(pin => mappinify(pin));
+					modifyCanvasMapPins(canvas)
 				}
 				// stop the nodeInteractionLayer from being placed over map pins
 				canvas.nodeInteractionLayer.setTarget = function (e) {
@@ -103,7 +87,7 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 		});
 
 		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+		this.addSettingTab(new CanvasMapPinSettingsTab(this.app, this));
 
 
 		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
@@ -120,6 +104,25 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 			DEFAULT_SETTINGS,
 			(await this.loadData()) as Partial<MyPluginSettings>,
 		);
+
+		let mapPinSize = 0;
+		Object.defineProperty(window, "mapPinSize", {
+			get() { return mapPinSize; },
+			set(v) {
+				mapPinSize = v;
+				document.documentElement.style.setProperty("--map-pin-size", v + "px");
+				const canvas = this.app.workspace.activeLeaf?.view.canvas;
+				if (canvas) modifyCanvasMapPins(canvas);
+			}
+		});
+		window.mapPinSize = this.settings.MapPinSize; // induce side effect of setting CSS :root variable
+
+		window.mapPinFileNameTemplate = {
+			currentTemplateString: this.settings.MapPinFilenameTemplateString,
+			generateMapPinFilename: function(name) {
+				return (this.currentTemplateString + ".md").split("%n").join(name);
+			}
+		};
 	}
 
 	async saveSettings() {
@@ -326,12 +329,24 @@ class InterceptedNodeMap extends Map {
 	}
 }
 
+function modifyCanvasMapPins(canvas) {
+	canvas
+		.nodes
+		.values()
+		.filter(node => node.unknownData.subtype === window.mapPinSubtype)
+		.forEach(pin => mappinify(pin));
+}
+
 function mappinify(mapPin: Tfile) {
+	mapPin.width = window.mapPinSize;
+	mapPin.height = window.mapPinSize;
+	mapPin.canvas.markMoved(mapPin);
 	mapPin.nodeEl.classList.add("cmp-map-pin");
 	mapPin.nodeEl.dataset.mapPinName = mapPin.unknownData.mapPinName;
 	mapPin.focus = () => {};
 	mapPin.blur = () => {};
 	mapPin.onClick = function() {
+ console.log("map pin clicked...");
 		const preview = app.workspace.getLeftLeaf(false);
 		preview.setViewState({
 			type: 'markdown',
@@ -343,6 +358,7 @@ function mappinify(mapPin: Tfile) {
 		});
 		app.workspace.setActiveLeaf(preview);
 	};
+
 	mapPin.mapPinned = true;
 	const parent = mapPin.canvas.nodes.get(mapPin.unknownData.parent);
 	if (parent.childMapPins) {
