@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting } from 'obsidian';
+import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
 import CanvasMapPinPlugin from './main';
 
 export const DEFAULT_SETTINGS = {
@@ -19,19 +19,30 @@ export class CanvasMapPinSettingsTab extends PluginSettingTab {
 
 		containerEl.empty();
 
-		new Setting(containerEl)
+		const setting1 = new Setting(containerEl)
 			.setName('Map Pin Filename Template String')
-			.setDesc("When you name a map pin, it finds or creates a file with the Map Pin filename. This name is generated with the following template string. Note that '%n' is replace with the name.")
-			.addText((text) =>
+			.setDesc("When you name a map pin, it finds or creates a file with the generated filename. This template string generates the filename. All occurrences of '%n' are replaced with the name.");
+		setting1.descEl.createEl("p", {text: "Here's an example for a pin called 'Gondor':"});
+		setting1.descEl.createEl("br");
+		const output = setting1.descEl.createEl("output", {text: "Gondor.md"});
+		setting1.addText((text) => {
 				text
 					.setPlaceholder('Enter a file name with "%n" where the name will go')
 					.setValue(this.plugin.settings.MapPinFilenameTemplateString)
 					.onChange(async (value) => {
-						window.mapPinFileNameTemplate.currentTemplateString = value;
-						this.plugin.settings.MapPinFilenameTemplateString = value;
+						if (!this.isValidFilename(value)) {
+							new Notice("Invalid filename. Avoid using: \\ / : * ? \" < > |", 3000)
+								.noticeEl.addClass("mod-warning");
+							return;
+						}
+						const newValue = value || "%n";
+						window.mapPinFilenameTemplate.currentTemplateString = newValue;
+						this.plugin.settings.MapPinFilenameTemplateString = newValue;
 						await this.plugin.saveSettings();
-					}),
-			);
+						output.textContent = window.mapPinFilenameTemplate.generateMapPinFilename("Gondor");
+					});
+			});
+
 		new Setting(containerEl)
 			.setName('Map Pin Size')
 			.setDesc("How big you want your map pins?")
@@ -46,4 +57,10 @@ export class CanvasMapPinSettingsTab extends PluginSettingTab {
 					}),
 			);
 	}
+	isValidFilename(filename: string): boolean {
+		const regex = /^[^\\/:*?"<>|]+$/;
+		return regex.test(filename);
+	}
 }
+
+

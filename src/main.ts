@@ -2,6 +2,7 @@ import {
 	Editor,
 	MarkdownFileInfo,
 	Modal,
+	Setting,	
 	Notice,
 	Plugin,
 	FileSystemAdapter,
@@ -51,7 +52,7 @@ export default class CanvasMapPinPlugin extends Plugin {
 				}
 				// stop the nodeInteractionLayer from being placed over map pins
 				canvas.nodeInteractionLayer.setTarget = function (e) {
-					if (e?.unknownData.subtype === mapPinSubtype) return;
+					if (e?.unknownData.subtype === mapPinSubtype || canvas.dragginPin) return;
 					this.target !== e && (this.target = e, this.render())
 				};
 			}
@@ -99,7 +100,7 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 
 	onunload() {
 		delete window.mapPinSize;
-		delete window.mapPinFileNameTemplate;
+		delete window.mapPinFilenameTemplate;
 	}
 
 	async loadSettings() {
@@ -132,7 +133,7 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 		});
 		window.mapPinSize = this.settings.MapPinSize; // induce side effect of setting CSS :root variable and modifying any open canvases
 
-		window.mapPinFileNameTemplate = {
+		window.mapPinFilenameTemplate = {
 			currentTemplateString: this.settings.MapPinFilenameTemplateString,
 			generateMapPinFilename: function(name) {
 				return (this.currentTemplateString + ".md").split("%n").join(name);
@@ -162,19 +163,23 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 		// Add "Map Pin" media to Canvas
 		const canvas = this.app.workspace.activeLeaf.view.canvas;
 
-		const filename = window.mapPinFileNameTemplate.generateMapPinFilename(name);
+		const filename = window.mapPinFilenameTemplate.generateMapPinFilename(name);
 
-		let mapPinTFile = app.vault.getAbstractFileByPath(filename);
+		let mapPinTFile = app.vault.getFileByPath(filename);
+		let fileCreated;
 		if (!mapPinTFile) {
 			try {
 				mapPinTFile = await app.vault.create(
 					app.fileManager.getNewFileParent(app.workspace.getActiveFile().path).path + filename,
 					"Add some info about " + name + "..."
 				);
+				fileCreated = true;
 			} catch(e) {
 				new Notice(e, 3000);
 				return;
 			};
+		} else {
+			fileCreated = false;
 		}
 
 		const mapPin = canvas.createFileNode({
@@ -185,11 +190,119 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
                         focus: false
 		});
 
-		Object.assign(mapPin.unknownData, {subtype: mapPinSubtype});
+		Object.assign(mapPin.unknownData, {
+			subtype: mapPinSubtype,
+			mapPinName: name
+		});
 
-		mapPin.nodeEl.classList.add("cmp-map-pin", "cmp-dragging");
-		mapPin.focus = () => {};
-		mapPin.blur = () => {};	
+		mapPin.nodeEl.classList.add("cmp-map-pin");
+
+		dragPin(mapPin, false, fileCreated);
+
+	}
+	addMapPinToCardMenu() {
+		// code taken from obsidian's setup for the Canvas Card Menu
+		e.createDiv({ cls: "canvas-card-menu-button mod-draggable" }, (function(e) {
+			Zg(e, C7.actionDragToAddCard(), { placement: "top" }),
+			Ag(e, "lucide-sticky-note"),
+			e.addEventListener("click", (function() {
+				t.createTextNode({ pos: t.posCenter(), position: "center" })
+			})),
+			e.addEventListener("pointerdown", (function(e) {
+				var n = t.config.defaultTextNodeDimensions;
+				t.dragTempNode(e, n, (function(e) {
+					t.deselectAll(),
+					t.createTextNode({ pos: e, size: n })
+				}))
+			}))
+		}));
+	}
+
+	shouldModifyCanvas(canvas) {
+		// modify if...
+		return (
+			// ...canvas has no nodes (initialised for 1st time)
+			!canvas.nodes.size ||
+			(
+				// ...or it has been initialised and...
+				canvas.nodes.size &&
+				// ...it contains map pins and...
+				canvas.nodes.values().find(node => node.unknownData.subtype === window.mapPinSubtype) &&
+				// ...the map pins haven't been initialised.
+				canvas.nodes.values().find(node => node.unknownData.subtype === window.mapPinSubtype && !node.mapPinned)
+			)
+		);
+	}
+}
+
+class MapPinNameModal extends Modal {
+	#input;
+	#callback;
+	onOpen() {
+		this.contentEl.classList.add("cmp-map-pin-modal");
+		this.setTitle("Map Pin Name");
+		this.#input = this.contentEl.createEl("input", {placeholder: "Pin location...", cls: "cmp-name-input"});
+		this.#input.addEventListener("keydown", (e)=>{e.key === "Enter" ? this.close() : {} });
+		this.contentEl.createEl("p", {text: "Pins automatically link to, or create, a file with their generated filename:", cls: ""});
+		const output = this.contentEl.createEl("output", { cls: "" });
+		this.#input.addEventListener("input", () => {
+			output.textContent = this.#input.value ? window.mapPinFilenameTemplate.generateMapPinFilename(this.#input.value) : "";
+		});
+		const settingsBtn = this.contentEl.createEl("button", {cls: "cmp-settings-button"});
+		settingsBtn.addEventListener("click", () => {
+			app.setting.open();
+			const settingsTab = app.setting.openTabById("canvas-map-plugin");
+			setTimeout(() => settingsTab.containerEl.children[0].classList.add("is-flashing"), 800);
+			setTimeout(() => settingsTab.containerEl.children[0].classList.remove("is-flashing"), 1800);
+		});
+
+		new Setting(this.contentEl)
+			.addButton(btn => btn
+				.setButtonText('Submit')
+				.setCta()
+				.onClick(() => {
+					this.close();
+				})
+			)
+			.addButton(btn => btn
+				.setButtonText('Cancel')
+				.setClass("mod-cancel")
+				.onClick(() => {
+					this.#input.value = "";
+					this.close();
+				})
+			);
+	}
+
+	onClose() {
+		if (this.#callback) { this.#callback(this.#input.value); }
+		this.contentEl.empty();
+	}
+
+	setValueCallback(callback) {
+		this.#callback = callback;
+		return this;
+	}
+}
+
+class InterceptedSet extends Set {
+	constructor(data) {
+		super(data);
+	}
+	add(v) {
+		if (v.unknownData.subtype !== window.mapPinSubtype) {
+			super.add(v);
+		}
+	}
+}
+
+function dragPin(mapPin, returnToInitialPos, deleteFileOnNullDrop) {
+	const canvas = mapPin.canvas;
+	canvas.draggingPin = true;
+
+	const initialPos = returnToInitialPos ? {x: mapPin.x, y: mapPin.y} : null;
+
+		mapPin.nodeEl.classList.add("cmp-dragging");
 		mapPin.getPoint = function() {return {x: this.x, y: this.y}};
 		const imageExts = [
 			"svg",
@@ -202,8 +315,6 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 		];
 
 		// Let it track cursor and be subject to drag dead zones until click
-		// + add status bar text for help 
-		const statusBarText = this.addStatusBarText("Click to place the pin on a Map!");
 
 		// canvas.pointer is modified "onPointerMove", so making it an accessor prop
 		// allows us to define the new mapPin[x&y] by hijacking their eventListener
@@ -249,109 +360,54 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 
 		const controller = new AbortController();
 
-		this.registerDomEvent(document, "click", () => {
+		document.addEventListener("click", (e) => {
 			controller.abort();
-			resetPointer(canvas); // deregister our hijacking
-			this.removeStatusBarText(statusBarText);
+			delete canvas.draggingPin;
 
 			const parentMap =  nodes
 				.filter(n => n.id !== mapPin.id && imageExts.includes(n.file?.extension) && pointInBox(mapPin.getPoint(), n.getBBox()))
 				.sort((e, t) => t.zIndex - e.zIndex)[0];
 			if (!parentMap) {
-				canvas.removeNode(mapPin);
+				if (initialPos) {
+					canvas.pointer = initialPos;	
+				} else {
+					canvas.removeNode(mapPin);
+					canvas.requestSave();
+					if (deleteFileOnNullDrop) {
+						canvas.app.vault.delete(mapPin.file);
+					}
+				}
+				resetPointer(canvas); // deregister our hijacking
 				return;
 			}
+			resetPointer(canvas); // deregister our hijacking
 			const offsetLeft = (mapPin.x - parentMap.x) / parentMap.width;
 			const offsetTop = (mapPin.y - parentMap.y) / parentMap.height;
 			Object.assign(mapPin.unknownData, {
-				subtype: mapPinSubtype,
-				mapPinName: name,
 				parent: parentMap.id,
 				offsetTop: offsetTop,
 				offsetLeft: offsetLeft
 			});
 			mapPin.nodeEl.classList.remove("cmp-dragging");
 			mappinify(mapPin);
-			// The following two event listeners need to be registered only for newly created pins
-			// don't ask why after mappinify they don't work like every other node... 
-			this.registerDomEvent(mapPin.nodeEl, "contextmenu", (e) => {e.preventDefault(); mapPin.onContextMenu(e);}, true);
-			this.registerDomEvent(mapPin.nodeEl, "click", (e) => {e.preventDefault(); mapPin.onClick()}, true);
 			canvas.requestSave();
 		}, {once: true, signal: controller.signal});
 
-		this.registerDomEvent(document, "keydown", ({key}) => {
+		document.addEventListener("keydown", ({key}) => {
 			if (!["Escape", "Delete", "Backspace"].includes(key)) return;
 			controller.abort();
+			delete canvas.draggingPin;
+			if (initialPos) {
+				canvas.pointer = initialPos;	
+			} else {
+				if (deleteFileOnNullDrop) {
+					canvas.app.vault.delete(mapPin.file);
+				}
+				canvas.removeNode(mapPin);
+			}
 			resetPointer(canvas);
-			this.removeStatusBarText(statusBarText);
-			canvas.removeNode(mapPin);
+			canvas.requestSave();
 		}, {signal: controller.signal});
-
-	}
-	addMapPinToCardMenu() {
-		// code taken from obsidian's setup for the Canvas Card Menu
-		e.createDiv({ cls: "canvas-card-menu-button mod-draggable" }, (function(e) {
-			Zg(e, C7.actionDragToAddCard(), { placement: "top" }),
-			Ag(e, "lucide-sticky-note"),
-			e.addEventListener("click", (function() {
-				t.createTextNode({ pos: t.posCenter(), position: "center" })
-			})),
-			e.addEventListener("pointerdown", (function(e) {
-				var n = t.config.defaultTextNodeDimensions;
-				t.dragTempNode(e, n, (function(e) {
-					t.deselectAll(),
-					t.createTextNode({ pos: e, size: n })
-				}))
-			}))
-		}));
-	}
-
-	shouldModifyCanvas(canvas) {
-		// modify if...
-		return (
-			// ...canvas has no nodes (initialised for 1st time)
-			!canvas.nodes.size ||
-			(
-				// ...or it has been initialised and...
-				canvas.nodes.size &&
-				// ...it contains map pins and...
-				canvas.nodes.values().find(node => node.unknownData.subtype === window.mapPinSubtype) &&
-				// ...the map pins haven't been initialised.
-				canvas.nodes.values().find(node => node.unknownData.subtype === window.mapPinSubtype && !node.mapPinned)
-			)
-		);
-	}
-}
-
-class MapPinNameModal extends Modal {
-	#input;
-	#callback;
-	onOpen() {
-		this.#input = this.contentEl.createEl("input", {placeholder: "Pin location..."});
-		this.setTitle("What's the name of this pin?");
-		this.#input.addEventListener("keydown", (e)=>{e.key === "Enter" ? this.close(): {} });
-	}
-
-	onClose() {
-		if (this.#callback) { this.#callback(this.#input.value); }
-		this.contentEl.empty();
-	}
-
-	setValueCallback(callback) {
-		this.#callback = callback;
-		return this;
-	}
-}
-
-class InterceptedSet extends Set {
-	constructor(data) {
-		super(data);
-	}
-	add(v) {
-		if (v.unknownData.subtype !== window.mapPinSubtype) {
-			super.add(v);
-		}
-	}
 }
 
 function processCanvas(canvas) {
@@ -382,30 +438,118 @@ function mappinify(mapPin: Tfile) {
 	mapPin.nodeEl.dataset.mapPinName = mapPin.unknownData.mapPinName;
 	mapPin.focus = () => {};
 	mapPin.blur = () => {};
+	// The following two event listeners need to be registered only for newly created pins
+	// and pins that the canvas randomly decides don't get their own onClick and onContextMenu
+	mapPin.nodeEl.addEventListener("contextmenu", (e) => {e.preventDefault(); mapPin.onContextMenu(e);}, true);
+	mapPin.nodeEl.addEventListener("click", (e) => {e.preventDefault(); mapPin.onClick()}, true);
+
 	mapPin.onContextMenu = function(e) {
+		if (this.contextMenuOpen) return;
+		this.contextMenuOpen = true;
 		const menu = new Menu();
 /*
-  [✓] Swap file
-  [✓] Rename file (currently called "Rename...")
-  [✓] Reveal file in navigation (allows user to do the rest of the default actions from the file itself)
-  [✓] Zoom to selection
-  [✓] Remove pin
-  [ ] Rename map pin
-  [ ] Move Pin
+  [ ] Swap file		arrow-left-right
+  [x] Rename file (currently called "Rename...")	pen-line
+  [x] Reveal file in navigation (allows user to do the rest of the default actions from the file itself)	folder-open
+
+  [x] Zoom to selection		zoom-to-selection
+  [ ] Move Pin			move | hand
+  [ ] Rename map pin		map-pin-pen
+
+  [x] Remove pin		trash-2 | map-pin-off | map-pin-minus | map-pin-x | map-pin-x-inside (red)
+
 */
+
+
+
+		if (this.file) {
+/* TODO
+			menu.addItem((item) =>
+				item
+					.setTitle('Swap file...')
+					.setIcon('arrow-left-right')
+					.onClick(() => {
+						// TODO
+					})
+			);
+*/
+			menu.addItem((item) =>
+				item
+					.setTitle('Rename file...')
+					.setIcon('pen-line')
+					.onClick(() => {
+						app.fileManager.promptForFileRename(mapPin.file);
+					})
+			);
+		} else {
+			// add file
+		}
 
 		menu.addItem((item) =>
 			item
-				.setTitle('Copy')
-				.setIcon('documents')
+				.setTitle('Reveal file in navigation')
+				.setIcon('folder-open')
 				.onClick(() => {
-					new Notice('Copied');
+					app.internalPlugins.plugins["file-explorer"].instance.revealInFolder(mapPin.file);
 				})
 		);
 
-	      menu.showAtMouseEvent(event);
+
+		menu.addSeparator();
+
+		menu.addItem((item) =>
+			item
+				.setTitle('Zoom to selection')
+				.setIcon('zoom-to-selection')
+				.onClick(() => {
+					mapPin.canvas.zoomToBbox(this.getBBox());
+				})
+		);
+
+		menu.addItem((item) =>
+			item
+				.setTitle('Move pin')
+				.setIcon('move')
+				.onClick((e) => {
+					e.stopPropagation(); // stop the current click from immediately placing the pin
+					dragPin(mapPin, true);
+				})
+		);
+
+/* Just delete the pin a create a new on ffs
+		menu.addItem((item) =>
+			item
+				.setTitle('Rename pin')
+				.setIcon('map-pin-pen')
+				.onClick(() => {
+					app.fileManager.promptForFileRename(this.file);
+				})
+		);
+*/
+		menu.addSeparator();
+
+		// doesn't handle map pin rerendering if user uses "undo" after deletion
+		menu.addItem((item) =>
+			item
+				.setTitle('Remove pin')
+				.setIcon('map-pin-x')
+				.setWarning(true)
+				.onClick(() => {
+					mapPin.canvas.removeNode(mapPin);
+					mapPin.canvas.requestSave();
+				})
+		);
+
+
+		menu.onunload = () => {mapPin.contextMenuOpen = false};
+
+		menu.showAtMouseEvent(event);
 	};
 	mapPin.onClick = async function() {
+		if (this.clicked || this.canvas.draggingPin) return;
+		this.clicked = true;
+		setTimeout(() => {mapPin.clicked = false}, 0);
+
 		const openPreview = app.workspace
 			.leftSplit
 			.children

@@ -2,6 +2,37 @@
 	--map-pin-size: 60px;
 }
 
+.cmp-map-pin-modal output,
+.cmp-map-pin-modal p {
+    opacity: 0.6;
+}
+
+.cmp-map-pin-modal output {
+    display: inline-block;
+    height: 1rem;
+    width: calc(100% - 2rem);
+    margin-top: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.cmp-settings-button {
+	position: relative;
+	top: -1rem;
+	display: inline;
+	padding: 1rem;
+	background-repeat: no-repeat;
+	background-position: center;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23b3b3b3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='lucide lucide-settings'%3E%3Cpath d='M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E");
+	cursor: pointer;
+}
+
+.cmp-name-input {
+    overflow: hidden;
+    padding: var(--size-2-3) var(--size-4-2);
+    resize: none;
+    width: 100%;
+}
+
 .cmp-map-pin {
 	cursor: pointer;
 }
