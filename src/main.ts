@@ -7,6 +7,7 @@ import {
 	FileSystemAdapter,
 	FileManager,
 	TFile,
+	Menu
 } from 'obsidian';
 import 	* as obb from 'obsidian';
 import {
@@ -271,6 +272,10 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 			});
 			mapPin.nodeEl.classList.remove("cmp-dragging");
 			mappinify(mapPin);
+			// The following two event listeners need to be registered only for newly created pins
+			// don't ask why after mappinify they don't work like every other node... 
+			this.registerDomEvent(mapPin.nodeEl, "contextmenu", (e) => {e.preventDefault(); mapPin.onContextMenu(e);}, true);
+			this.registerDomEvent(mapPin.nodeEl, "click", (e) => {e.preventDefault(); mapPin.onClick()}, true);
 			canvas.requestSave();
 		}, {once: true, signal: controller.signal});
 
@@ -343,9 +348,7 @@ class InterceptedSet extends Set {
 		super(data);
 	}
 	add(v) {
-		if (v.unknownData.subtype === window.mapPinSubtype) {
-			v.mapPinned ? v.onClick() : {}; // don't do anything if the pin was just placed
-		} else {
+		if (v.unknownData.subtype !== window.mapPinSubtype) {
 			super.add(v);
 		}
 	}
@@ -366,6 +369,8 @@ function modifyCanvasMapPins(canvas) {
 		.values()
 		.filter(node => node.unknownData.subtype === window.mapPinSubtype)
 		.forEach(pin => mappinify(pin));
+	// stop the selection menu from coming up on map pins
+	// only needed for newly created map pins
 	canvas.selection = new InterceptedSet( canvas.selection.values().toArray() );
 }
 
@@ -377,7 +382,29 @@ function mappinify(mapPin: Tfile) {
 	mapPin.nodeEl.dataset.mapPinName = mapPin.unknownData.mapPinName;
 	mapPin.focus = () => {};
 	mapPin.blur = () => {};
-	mapPin.nodeEl.removeEventListener("click", mapPin.__proto__.onClick);
+	mapPin.onContextMenu = function(e) {
+		const menu = new Menu();
+/*
+  [✓] Swap file
+  [✓] Rename file (currently called "Rename...")
+  [✓] Reveal file in navigation (allows user to do the rest of the default actions from the file itself)
+  [✓] Zoom to selection
+  [✓] Remove pin
+  [ ] Rename map pin
+  [ ] Move Pin
+*/
+
+		menu.addItem((item) =>
+			item
+				.setTitle('Copy')
+				.setIcon('documents')
+				.onClick(() => {
+					new Notice('Copied');
+				})
+		);
+
+	      menu.showAtMouseEvent(event);
+	};
 	mapPin.onClick = async function() {
 		const openPreview = app.workspace
 			.leftSplit

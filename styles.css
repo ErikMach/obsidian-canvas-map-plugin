@@ -2,11 +2,6 @@
 	--map-pin-size: 60px;
 }
 
-.canvas-node-interaction-layer {
-    background-color: blue;
-    opacity: 0.3;
-}
-
 .cmp-map-pin {
 	cursor: pointer;
 }
