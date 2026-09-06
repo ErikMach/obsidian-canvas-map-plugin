@@ -32,7 +32,7 @@ export class CanvasMapPinSettingsTab extends PluginSettingTab {
 					.onChange(async (value) => {
 						if (!this.isValidFilename(value)) {
 							new Notice("Invalid filename. Avoid using: \\ / : * ? \" < > |", 3000)
-								.noticeEl.addClass("mod-warning");
+								.messageEl.addClass("mod-warning");
 							return;
 						}
 						const newValue = value || "%n";

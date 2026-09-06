@@ -1,16 +1,11 @@
 import {
-	Editor,
-	MarkdownFileInfo,
 	Modal,
 	Setting,	
 	Notice,
 	Plugin,
-	FileSystemAdapter,
-	FileManager,
 	TFile,
 	Menu
 } from 'obsidian';
-import 	* as obb from 'obsidian';
 import {
 	DEFAULT_SETTINGS,
 	MyPluginSettings,
@@ -58,7 +53,6 @@ export default class CanvasMapPinPlugin extends Plugin {
 			}
 		}));
 
-		// This adds an editor command that can perform some operation on the current editor instance
 		this.addCommand({
 			id: 'add-canvas-map-pin',
 			name: 'Add a Map Pin on a Canvas',
@@ -237,7 +231,7 @@ class MapPinNameModal extends Modal {
 		const settingsBtn = this.contentEl.createEl("button", {cls: "cmp-settings-button"});
 		settingsBtn.addEventListener("click", () => {
 			app.setting.open();
-			const settingsTab = app.setting.openTabById("canvas-map-plugin");
+			const settingsTab = app.setting.openTabById("canvas-map-pins");
 			setTimeout(() => settingsTab.containerEl.children[0].classList.add("is-flashing"), 800);
 			setTimeout(() => settingsTab.containerEl.children[0].classList.remove("is-flashing"), 1800);
 		});
@@ -282,7 +276,7 @@ class InterceptedSet extends Set {
 	}
 }
 
-function dragPin(mapPin, returnToInitialPos, deleteFileOnNullDrop) {
+function dragPin(mapPin: TFile, returnToInitialPos, deleteFileOnNullDrop) {
 	const canvas = mapPin.canvas;
 	canvas.draggingPin = true;
 
@@ -396,7 +390,7 @@ function dragPin(mapPin, returnToInitialPos, deleteFileOnNullDrop) {
 		}, {signal: controller.signal});
 }
 
-function processCanvas(canvas) {
+function _processCanvas(canvas) {
 	modifyCanvasMapPins(canvas);
 	// stop the nodeInteractionLayer from being placed over map pins
 	canvas.nodeInteractionLayer.setTarget = function (e) {
@@ -529,7 +523,7 @@ function mappinify(mapPin: Tfile) {
 
 		menu.onunload = () => {mapPin.contextMenuOpen = false};
 
-		menu.showAtMouseEvent(event);
+		menu.showAtMouseEvent(e);
 	};
 	mapPin.onClick = async function() {
 		if (this.clicked || this.canvas.draggingPin) return;

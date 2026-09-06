@@ -1,4 +1,4 @@
-# Canvas Map Pins Plugin 
+# Canvas Map Pins 
 
 This plugin extends the Canvas Plugin and the JSON Canvas format by adding Map Pins.
 
