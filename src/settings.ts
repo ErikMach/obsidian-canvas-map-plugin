@@ -1,7 +1,12 @@
 import { App, requireApiVersion, PluginSettingTab, Setting, Notice } from 'obsidian';
 import CanvasMapPinPlugin from './main';
 
-export const DEFAULT_SETTINGS = {
+export interface CanvasMapPinSettings {
+	MapPinFilenameTemplateString: string;
+	MapPinSize: number;
+}
+
+export const DEFAULT_SETTINGS: CanvasMapPinSettings = {
 	MapPinFilenameTemplateString: "%n",
 	MapPinSize: 60,
 };
@@ -35,16 +40,16 @@ export class CanvasMapPinSettingsTab extends PluginSettingTab {
 							if (!requireApiVersion("1.8.7")) {
 								messageEl = "noticeEl";
 							}
-							new Notice("Invalid filename. Avoid using: \\ / : * ? \" < > |", 3000)
+							(new Notice("Invalid filename. Avoid using: \\ / : * ? \" < > |", 3000) as any)
 								[messageEl]
 								.addClass("mod-warning");
 							return;
 						}
 						const newValue = value || "%n";
-						window.mapPinFilenameTemplate.currentTemplateString = newValue;
+						(window as any).mapPinFilenameTemplate.currentTemplateString = newValue;
 						this.plugin.settings.MapPinFilenameTemplateString = newValue;
 						await this.plugin.saveSettings();
-						output.textContent = window.mapPinFilenameTemplate.generateMapPinFilename("Gondor");
+						output.textContent = (window as any).mapPinFilenameTemplate.generateMapPinFilename("Gondor");
 					});
 			});
 
@@ -56,7 +61,7 @@ export class CanvasMapPinSettingsTab extends PluginSettingTab {
 					.setLimits(40, 400, 10)
 					.setValue(this.plugin.settings.MapPinSize)
 					.onChange(async (value) => {
-						window.mapPinSize = value;
+						(window as any).mapPinSize = value;
 						this.plugin.settings.MapPinSize = value;
 						await this.plugin.saveSettings();
 					}),
