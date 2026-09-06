@@ -26,12 +26,12 @@ export default class CanvasMapPinPlugin extends Plugin {
 		(window as any).mapPinSubtype = "map-pin";
 
 		this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf: WorkspaceLeaf) => {
-			const canvas = leaf.view.canvas;
+			const canvas = (leaf.view as any).canvas;
 			if (!canvas) return;
 			if (this.shouldModifyCanvas(canvas)) {
 				if (Object.isEmpty(canvas.data)) {
 					// only reliable way to await the canvas.nodes being populated
-					void new Promise((resolve, reject) => {
+					void new Promise<void>((resolve, reject) => {
 						let data = canvas.data;
 						Object.defineProperty(canvas, "data", {
 							get() { return data; },
@@ -52,7 +52,7 @@ export default class CanvasMapPinPlugin extends Plugin {
 				}
 				// stop the nodeInteractionLayer from being placed over map pins
 				canvas.nodeInteractionLayer.setTarget = function (e: any) {
-					if (e?.unknownData.subtype === mapPinSubtype || canvas.dragginPin) return;
+					if (e?.unknownData.subtype === (window as any).mapPinSubtype || canvas.dragginPin) return;
 					this.target !== e && (this.target = e, this.render())
 				};
 			}
@@ -64,7 +64,7 @@ export default class CanvasMapPinPlugin extends Plugin {
 			repeatable: false,
 			icon: 'map-pin-plus-inside',
 			hotkeys: [{key: 'M', modifiers: ['Ctrl']}],
-			checkCallback: async (checking: boolean | void) => {
+			checkCallback: async (checking: boolean) => {
 				const canvasView = this.app.workspace.activeLeaf?.view.getViewType() === 'canvas';
 				if (canvasView) {
 					if (!checking) {
@@ -137,7 +137,7 @@ export default class CanvasMapPinPlugin extends Plugin {
 	removeStatusBarText(el: HTMLElement) {
 		el.remove();
 	}
-	async getPinName(): string {
+	async getPinName(): Promise<string> {
 		return new Promise((resolve, reject) => {
 			new MapPinNameModal(this.app)
 				.setValueCallback(value => resolve(value))
@@ -146,20 +146,20 @@ export default class CanvasMapPinPlugin extends Plugin {
 	}
 	async addMapPin(name: string) {
 		// Add "Map Pin" media to Canvas
-		const canvas = this.app.workspace.activeLeaf.view.canvas;
+		const canvas = (this.app.workspace.activeLeaf?.view as any).canvas;
 
 		const filename = (window as any).mapPinFilenameTemplate.generateMapPinFilename(name);
 
-		let mapPinany = this.app.vault.getFileByPath(filename);
+		let mapPinTFile: TFile | null = this.app.vault.getFileByPath(filename);
 		let fileCreated;
-		if (!mapPinany) {
+		if (!mapPinTFile) {
 			try {
-				mapPinany = await this.app.vault.create(
-					this.app.fileManager.getNewFileParent(this.app.workspace.getActiveFile().path).path + filename,
+				mapPinTFile = await this.app.vault.create(
+					this.app.fileManager.getNewFileParent(this.app.workspace.getActiveFile()?.path || "./").path + filename,
 					"Add some info about " + name + "..."
 				);
 				fileCreated = true;
-			} catch(e: string) {
+			} catch(e: any) {
 				new Notice(e, 3000);
 				return;
 			};
@@ -170,13 +170,13 @@ export default class CanvasMapPinPlugin extends Plugin {
 		const mapPin = canvas.createFileNode({
                         pos: canvas.pointer,
                         size: { width: (window as any).mapPinSize, height: (window as any).mapPinSize },
-                        file: mapPinany,
+                        file: mapPinTFile,
                         save: true,
                         focus: false
 		});
 
 		Object.assign(mapPin.unknownData, {
-			subtype: mapPinSubtype,
+			subtype: (window as any).mapPinSubtype,
 			mapPinName: name
 		});
 
@@ -204,7 +204,7 @@ export default class CanvasMapPinPlugin extends Plugin {
 
 class MapPinNameModal extends Modal {
 	#input: HTMLInputElement | undefined;
-	#callback: (s: string) => void | undefined;
+	#callback: undefined | ((s: string) => void);
 	onOpen() {
 		this.contentEl.classList.add("cmp-map-pin-modal");
 		this.setTitle("Map Pin Name");
@@ -530,7 +530,7 @@ function mappinify(mapPin: any) {
 			.children
 			.filter((section: any) => section.type === "tabs")[0]
 			.children
-			.filter((leaf: WorkspaceLeaf) => leaf.view.file?.name === mapPin.filePath)[0];
+			.filter((leaf: any) => leaf.view.file?.name === mapPin.filePath)[0];
 		if (openPreview) {
 			await app.workspace.revealLeaf(openPreview);
 			return;
