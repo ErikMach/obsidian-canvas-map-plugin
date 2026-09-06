@@ -96,7 +96,10 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 		);
 	}
 
-	onunload() {}
+	onunload() {
+		delete window.mapPinSize;
+		delete window.mapPinFileNameTemplate;
+	}
 
 	async loadSettings() {
 		this.settings = Object.assign(
@@ -111,11 +114,22 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 			set(v) {
 				mapPinSize = v;
 				document.documentElement.style.setProperty("--map-pin-size", v + "px");
-				const canvas = this.app.workspace.activeLeaf?.view.canvas;
-				if (canvas) modifyCanvasMapPins(canvas);
-			}
+/*
+ * This code will render any canvases that have map pins if in view, whether focussed or not.
+ * however, it causes canvases being loaded alongside this plugin (i.e. on normal start up) to throw an error since their data hasn't loaded yet.
+ *  
+				const canvases = [];
+				this.app.workspace.iterateAllLeaves(leaf => {
+					if (leaf.width && leaf.view.canvas) {
+						canvases.push(leaf.view.canvas);
+					}
+				});
+				if (canvases.length) canvases.forEach(canvas => processCanvas(canvas));
+*/
+			},
+			configurable: true,
 		});
-		window.mapPinSize = this.settings.MapPinSize; // induce side effect of setting CSS :root variable
+		window.mapPinSize = this.settings.MapPinSize; // induce side effect of setting CSS :root variable and modifying any open canvases
 
 		window.mapPinFileNameTemplate = {
 			currentTemplateString: this.settings.MapPinFilenameTemplateString,
@@ -162,7 +176,6 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 			};
 		}
 
-
 		const mapPin = canvas.createFileNode({
                         pos: canvas.pointer,
                         size: { width: mapPinSize, height: mapPinSize },
@@ -173,10 +186,10 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 
 		Object.assign(mapPin.unknownData, {subtype: mapPinSubtype});
 
-		mapPin.nodeEl.classList.add("cmp-map-pin");
+		mapPin.nodeEl.classList.add("cmp-map-pin", "cmp-dragging");
 		mapPin.focus = () => {};
 		mapPin.blur = () => {};	
-
+		mapPin.getPoint = function() {return {x: this.x, y: this.y}};
 		const imageExts = [
 			"svg",
 			"jpg",
@@ -193,8 +206,8 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 
 		// canvas.pointer is modified "onPointerMove", so making it an accessor prop
 		// allows us to define the new mapPin[x&y] by hijacking their eventListener
-		const collides = (e, t) => {
-			return t.minX <= e.maxX && t.minY <= e.maxY && t.maxX >= e.minX && t.maxY >= e.minY;
+		const pointInBox = (point, bBox) => {
+			return bBox.minX <= point.x && bBox.minY <= point.y && bBox.maxX >= point.x && bBox.maxY >= point.y;
 		};
 		// canvas.nodeIndex.data.children are sometimes [TFile] and sometimes [{children:[TFile]}]
 		const nodes = canvas.nodeIndex.data.children.flatMap(obj => obj.children ? obj.children : obj);
@@ -203,11 +216,10 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 			.sort((e, t) => t.zIndex - e.zIndex)
 			.map(t => t.getBBox());
 
-		if (!dropZones.find(z => collides(z, mapPin.getBBox()))) {mapPin.nodeEl.classList.add("cmp-no-drop");}
+		if (!dropZones.find(z => pointInBox(mapPin.getPoint(), z))) {mapPin.nodeEl.classList.add("cmp-no-drop");}
 
 
 		let pointerValue = {x:0, y:0};
-		const halfSize = mapPinSize / 2;
 		let lastCollision = false;
 		Object.defineProperty(canvas, "pointer", {
 			get() {	return pointerValue; },
@@ -217,7 +229,7 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 				mapPin.y = Math.round(v.y);
 				this.markMoved(mapPin);  // rerenders just this element in next frame ...I assume
 
-				const collision = dropZones.find(z => collides(z, mapPin.getBBox()));
+				const collision = dropZones.find(z => pointInBox(mapPin.getPoint(), z));
 				if (collision && !lastCollision) {
 					mapPin.nodeEl.classList.remove("cmp-no-drop");
 					lastCollision = true;
@@ -228,15 +240,21 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 			},
 		});
 
+		const resetPointer = (canvas) => {
+			const lastPointerValue = canvas.pointer;
+			delete canvas.pointer;
+			canvas.pointer = lastPointerValue;
+		};
+
 		const controller = new AbortController();
 
 		this.registerDomEvent(document, "click", () => {
 			controller.abort();
-			delete canvas.pointer; // deregister our hijacking
+			resetPointer(canvas); // deregister our hijacking
 			this.removeStatusBarText(statusBarText);
 
 			const parentMap =  nodes
-				.filter(n => n.id !== mapPin.id && imageExts.includes(n.file?.extension) && collides(n.getBBox(), mapPin.getBBox()))
+				.filter(n => n.id !== mapPin.id && imageExts.includes(n.file?.extension) && pointInBox(mapPin.getPoint(), n.getBBox()))
 				.sort((e, t) => t.zIndex - e.zIndex)[0];
 			if (!parentMap) {
 				canvas.removeNode(mapPin);
@@ -251,6 +269,7 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 				offsetTop: offsetTop,
 				offsetLeft: offsetLeft
 			});
+			mapPin.nodeEl.classList.remove("cmp-dragging");
 			mappinify(mapPin);
 			canvas.requestSave();
 		}, {once: true, signal: controller.signal});
@@ -258,7 +277,7 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 		this.registerDomEvent(document, "keydown", ({key}) => {
 			if (!["Escape", "Delete", "Backspace"].includes(key)) return;
 			controller.abort();
-			delete canvas.pointer;
+			resetPointer(canvas);
 			this.removeStatusBarText(statusBarText);
 			canvas.removeNode(mapPin);
 		}, {signal: controller.signal});
@@ -319,14 +338,26 @@ class MapPinNameModal extends Modal {
 	}
 }
 
-class InterceptedNodeMap extends Map {
-	constructor() {
-		super();
+class InterceptedSet extends Set {
+	constructor(data) {
+		super(data);
 	}
-	set(k, v) {
-		console.log(`Node insert: ${k}:${v}`);
-		this.prototype.set(k,v);
+	add(v) {
+		if (v.unknownData.subtype === window.mapPinSubtype) {
+			v.mapPinned ? v.onClick() : {}; // don't do anything if the pin was just placed
+		} else {
+			super.add(v);
+		}
 	}
+}
+
+function processCanvas(canvas) {
+	modifyCanvasMapPins(canvas);
+	// stop the nodeInteractionLayer from being placed over map pins
+	canvas.nodeInteractionLayer.setTarget = function (e) {
+		if (e?.unknownData.subtype === window.mapPinSubtype) return;
+		this.target !== e && (this.target = e, this.render())
+	};
 }
 
 function modifyCanvasMapPins(canvas) {
@@ -335,6 +366,7 @@ function modifyCanvasMapPins(canvas) {
 		.values()
 		.filter(node => node.unknownData.subtype === window.mapPinSubtype)
 		.forEach(pin => mappinify(pin));
+	canvas.selection = new InterceptedSet( canvas.selection.values().toArray() );
 }
 
 function mappinify(mapPin: Tfile) {
@@ -345,8 +377,18 @@ function mappinify(mapPin: Tfile) {
 	mapPin.nodeEl.dataset.mapPinName = mapPin.unknownData.mapPinName;
 	mapPin.focus = () => {};
 	mapPin.blur = () => {};
-	mapPin.onClick = function() {
- console.log("map pin clicked...");
+	mapPin.nodeEl.removeEventListener("click", mapPin.__proto__.onClick);
+	mapPin.onClick = async function() {
+		const openPreview = app.workspace
+			.leftSplit
+			.children
+			.filter(section => section.type === "tabs")[0]
+			.children
+			.filter(leaf => leaf.view.file?.name === mapPin.filePath)[0];
+		if (openPreview) {
+			await app.workspace.revealLeaf(openPreview);
+			return;
+		}
 		const preview = app.workspace.getLeftLeaf(false);
 		preview.setViewState({
 			type: 'markdown',

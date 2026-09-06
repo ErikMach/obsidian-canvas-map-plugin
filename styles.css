@@ -7,10 +7,6 @@
     opacity: 0.3;
 }
 
-.cmp-no-drop {
-	cursor: no-drop;
-}
-
 .cmp-map-pin {
 	cursor: pointer;
 }
@@ -67,4 +63,21 @@
 
 .cmp-map-pin:hover:before {
 	transform: translate(0, -50%) scale(2);
+}
+
+.cmp-no-drop,
+.cmp-no-drop > * {
+	cursor: no-drop;
+}
+
+.cmp-dragging:hover:before,
+.cmp-dragging:hover:after {
+	content: ""; /* cheap way of doing opacity 0 for :after only without writing another rule. Also ensures it won't come up "undefined" */
+	transform: none;
+}
+
+.cmp-dragging:after {
+    height: 200%;
+    top: -100%;
+    left: -100%;
 }
