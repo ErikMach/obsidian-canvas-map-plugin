@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
+import { App, requireApiVersion, PluginSettingTab, Setting, Notice } from 'obsidian';
 import CanvasMapPinPlugin from './main';
 
 export const DEFAULT_SETTINGS = {
@@ -31,8 +31,13 @@ export class CanvasMapPinSettingsTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.MapPinFilenameTemplateString)
 					.onChange(async (value) => {
 						if (!this.isValidFilename(value)) {
+							let messageEl: string = "messageEl";
+							if (!requireApiVersion("1.8.7")) {
+								messageEl = "noticeEl";
+							}
 							new Notice("Invalid filename. Avoid using: \\ / : * ? \" < > |", 3000)
-								.messageEl.addClass("mod-warning");
+								[messageEl]
+								.addClass("mod-warning");
 							return;
 						}
 						const newValue = value || "%n";
@@ -57,30 +62,31 @@ export class CanvasMapPinSettingsTab extends PluginSettingTab {
 					}),
 			);
 	}
-	getSettingsDefinitions(): Array<{
-		    key: keyof MyPluginSettings;
-		    type: "string" | "number" | "slider" | "boolean" | "dropdown";
-		    defaultValue: string | number | boolean;
-		    limits?: { min: number; max: number; step: number };
-	}> {
+/*... for another time	
+	getSettingDefinitions() {
 		return [
 			{
-				key: "MapPinFilenameTemplateString",
-				type: "string",
-				defaultValue: "%n",
+				
+				key: "Map Pin Filename Template String",
+				control: {
+					type: "text",
+					key: "filename",
+					placeholder: "Enter a filename with '%n' where the name will go"
+				}
 			},
 			{
-				key: "MapPinSize",
-				type: "slider", // Use "slider" for slider-type settings
-				defaultValue: 100,
-				limits: {
-					min: 40,    // Minimum value for the slider
-					max: 400,   // Maximum value for the slider
-					step: 10,   // Step size for the slider
-				},
-			},
+				name: "Map Pin Size",
+				control: {
+					type: "slider",
+					key: "size",
+					min: 40,
+					max: 400,
+					step: 10
+				}
+			}
 		];
 	}
+*/
 	isValidFilename(filename: string): boolean {
 		const regex = /^[^\\/:*?"<>|]+$/;
 		return regex.test(filename);

@@ -21,7 +21,7 @@ export default class CanvasMapPinPlugin extends Plugin {
 
 		window.mapPinSubtype = "map-pin";
 
-		this.registerEvent(app.workspace.on("active-leaf-change", (leaf: WorkspaceLeaf) => {
+		this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf: WorkspaceLeaf) => {
 			const canvas = leaf.view.canvas;
 			if (!canvas) return;
 			if (this.shouldModifyCanvas(canvas)) {
@@ -146,12 +146,12 @@ export default class CanvasMapPinPlugin extends Plugin {
 
 		const filename = window.mapPinFilenameTemplate.generateMapPinFilename(name);
 
-		let mapPinTFile = app.vault.getFileByPath(filename);
+		let mapPinTFile = this.app.vault.getFileByPath(filename);
 		let fileCreated;
 		if (!mapPinTFile) {
 			try {
-				mapPinTFile = await app.vault.create(
-					app.fileManager.getNewFileParent(app.workspace.getActiveFile().path).path + filename,
+				mapPinTFile = await this.app.vault.create(
+					this.app.fileManager.getNewFileParent(this.app.workspace.getActiveFile().path).path + filename,
 					"Add some info about " + name + "..."
 				);
 				fileCreated = true;
