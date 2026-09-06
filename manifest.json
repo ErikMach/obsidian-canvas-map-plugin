@@ -1,6 +1,6 @@
 {
-	"id": "canvas-map-plugin",
-	"name": "Canvas Map Plugin",
+	"id": "canvas-map-pins",
+	"name": "Canvas Map Pins",
 	"version": "1.0.0",
 	"minAppVersion": "1.0.0",
 	"description": "Adds th ability to put 'pins' on maps in a Canvas",
