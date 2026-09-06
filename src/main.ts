@@ -58,14 +58,6 @@ export default class CanvasMapPinPlugin extends Plugin {
 			}
 		}));
 
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('map-pin-plus-inside', 'Add Map Pin to Canvas', (_evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-window.canvas = this.app.workspace.activeLeaf.view.canvas;
-
-			new Notice('Canvas is in window object!');
-		});
-
 		// This adds an editor command that can perform some operation on the current editor instance
 		this.addCommand({
 			id: 'add-canvas-map-pin',
@@ -88,14 +80,8 @@ window.canvas = this.app.workspace.activeLeaf.view.canvas;
 			},
 		});
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new CanvasMapPinSettingsTab(this.app, this));
 
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(
-			window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000),
-		);
 	}
 
 	onunload() {
