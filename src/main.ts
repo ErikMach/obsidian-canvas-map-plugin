@@ -204,13 +204,16 @@ class MapPinNameModal extends Modal {
 	onOpen() {
 		this.contentEl.classList.add("cmp-map-pin-modal");
 		this.setTitle("Map Pin Name");
+
 		this.#input = this.contentEl.createEl("input", {placeholder: "Pin location...", cls: "cmp-name-input"});
-		this.#input.addEventListener("keydown", (e)=>{e.key === "Enter" ? this.close() : {} });
+		this.#input.addEventListener("keydown", (e) => {e.key === "Enter" ? this.returningClose() : {} });
+
 		this.contentEl.createEl("p", {text: "Pins automatically link to, or create, a file with their generated filename:", cls: ""});
 		const output = this.contentEl.createEl("output", { cls: "" });
 		this.#input.addEventListener("input", () => {
 			output.textContent = this.#input.value ? window.mapPinFilenameTemplate.generateMapPinFilename(this.#input.value) : "";
 		});
+
 		const settingsBtn = this.contentEl.createEl("button", {cls: "cmp-settings-button"});
 		settingsBtn.addEventListener("click", () => {
 			app.setting.open();
@@ -224,21 +227,24 @@ class MapPinNameModal extends Modal {
 				.setButtonText('Submit')
 				.setCta()
 				.onClick(() => {
-					this.close();
+					this.returningClose();
 				})
 			)
 			.addButton(btn => btn
 				.setButtonText('Cancel')
 				.setClass("mod-cancel")
 				.onClick(() => {
-					this.#input.value = "";
 					this.close();
 				})
 			);
 	}
 
-	onClose() {
+	returningClose() {
 		if (this.#callback) { this.#callback(this.#input.value); }
+		this.close();
+	}
+
+	onClose() {
 		this.contentEl.empty();
 	}
 
