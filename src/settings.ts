@@ -57,6 +57,30 @@ export class CanvasMapPinSettingsTab extends PluginSettingTab {
 					}),
 			);
 	}
+	getSettingsDefinitions(): Array<{
+		    key: keyof MyPluginSettings;
+		    type: "string" | "number" | "slider" | "boolean" | "dropdown";
+		    defaultValue: string | number | boolean;
+		    limits?: { min: number; max: number; step: number };
+	}> {
+		return [
+			{
+				key: "MapPinFilenameTemplateString",
+				type: "string",
+				defaultValue: "%n",
+			},
+			{
+				key: "MapPinSize",
+				type: "slider", // Use "slider" for slider-type settings
+				defaultValue: 100,
+				limits: {
+					min: 40,    // Minimum value for the slider
+					max: 400,   // Maximum value for the slider
+					step: 10,   // Step size for the slider
+				},
+			},
+		];
+	}
 	isValidFilename(filename: string): boolean {
 		const regex = /^[^\\/:*?"<>|]+$/;
 		return regex.test(filename);

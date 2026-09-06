@@ -3,8 +3,9 @@ import {
 	Setting,	
 	Notice,
 	Plugin,
+	Menu,
 	TFile,
-	Menu
+	WorkspaceLeaf
 } from 'obsidian';
 import {
 	DEFAULT_SETTINGS,
@@ -20,13 +21,13 @@ export default class CanvasMapPinPlugin extends Plugin {
 
 		window.mapPinSubtype = "map-pin";
 
-		this.registerEvent(app.workspace.on("active-leaf-change", (leaf) => {
+		this.registerEvent(app.workspace.on("active-leaf-change", (leaf: WorkspaceLeaf) => {
 			const canvas = leaf.view.canvas;
 			if (!canvas) return;
 			if (this.shouldModifyCanvas(canvas)) {
 				if (Object.isEmpty(canvas.data)) {
 					// only reliable way to await the canvas.nodes being populated
-					new Promise((resolve, reject) => {
+					void new Promise((resolve, reject) => {
 						let data = canvas.data;
 						Object.defineProperty(canvas, "data", {
 							get() { return data; },
@@ -180,24 +181,6 @@ export default class CanvasMapPinPlugin extends Plugin {
 		dragPin(mapPin, false, fileCreated);
 
 	}
-	addMapPinToCardMenu() {
-		// code taken from obsidian's setup for the Canvas Card Menu
-		e.createDiv({ cls: "canvas-card-menu-button mod-draggable" }, (function(e) {
-			Zg(e, C7.actionDragToAddCard(), { placement: "top" }),
-			Ag(e, "lucide-sticky-note"),
-			e.addEventListener("click", (function() {
-				t.createTextNode({ pos: t.posCenter(), position: "center" })
-			})),
-			e.addEventListener("pointerdown", (function(e) {
-				var n = t.config.defaultTextNodeDimensions;
-				t.dragTempNode(e, n, (function(e) {
-					t.deselectAll(),
-					t.createTextNode({ pos: e, size: n })
-				}))
-			}))
-		}));
-	}
-
 	shouldModifyCanvas(canvas) {
 		// modify if...
 		return (
@@ -232,8 +215,8 @@ class MapPinNameModal extends Modal {
 		settingsBtn.addEventListener("click", () => {
 			app.setting.open();
 			const settingsTab = app.setting.openTabById("canvas-map-pins");
-			setTimeout(() => settingsTab.containerEl.children[0].classList.add("is-flashing"), 800);
-			setTimeout(() => settingsTab.containerEl.children[0].classList.remove("is-flashing"), 1800);
+			window.setTimeout(() => settingsTab.containerEl.children[0].classList.add("is-flashing"), 800);
+			window.setTimeout(() => settingsTab.containerEl.children[0].classList.remove("is-flashing"), 1800);
 		});
 
 		new Setting(this.contentEl)
@@ -528,7 +511,7 @@ function mappinify(mapPin: Tfile) {
 	mapPin.onClick = async function() {
 		if (this.clicked || this.canvas.draggingPin) return;
 		this.clicked = true;
-		setTimeout(() => {mapPin.clicked = false}, 0);
+		window.setTimeout(() => {mapPin.clicked = false}, 0);
 
 		const openPreview = app.workspace
 			.leftSplit
