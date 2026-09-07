@@ -68,12 +68,7 @@ export default class CanvasMapPinPlugin extends Plugin {
 				const canvasView = this.app.workspace.activeLeaf?.view.getViewType() === 'canvas';
 				if (canvasView) {
 					if (!checking) {
-						(async () => {
-							const name: string = await this.getPinName();
-							if (name) {
-								await this.addMapPin(name);
-							}
-						})();
+						void this.promtCreateMapPin();
 					}
 					return true;
 				}
@@ -89,6 +84,8 @@ export default class CanvasMapPinPlugin extends Plugin {
 
 	async loadSettings() {
 		const loadedSettings = (await this.loadData()) as Partial<CanvasMapPinSettings>;
+
+		this.settings = {} as CanvasMapPinSettings; 
 
 		this.settings.MapPinFilename = {
 			template:  loadedSettings.MapPinFilename?.template || DEFAULT_SETTINGS.MapPinFilename.template,
@@ -131,6 +128,12 @@ export default class CanvasMapPinPlugin extends Plugin {
 	}
 	removeStatusBarText(el: HTMLElement) {
 		el.remove();
+	}
+	async promtCreateMapPin(): Promise<void> {
+		const name = await this.getPinName();
+		if (name) {
+			await this.addMapPin(name);
+		}
 	}
 	async getPinName(): Promise<string> {
 		return new Promise((resolve, reject) => {
