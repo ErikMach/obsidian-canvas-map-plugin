@@ -2,12 +2,20 @@ import { App, requireApiVersion, PluginSettingTab, Setting, Notice } from 'obsid
 import CanvasMapPinPlugin from './main';
 
 export interface CanvasMapPinSettings {
-	MapPinFilenameTemplateString: string;
+	MapPinFilename: {
+		template: string,
+		generate: (name: string) => string
+	};
 	MapPinSize: number;
 }
 
 export const DEFAULT_SETTINGS: CanvasMapPinSettings = {
-	MapPinFilenameTemplateString: "%n",
+	MapPinFilename: {
+		template: "%n",
+		generate: function(name: string): string {
+			return this.template.replaceAll("%n", name).concat(".md");
+		}
+	},
 	MapPinSize: 60,
 };
 
@@ -33,23 +41,19 @@ export class CanvasMapPinSettingsTab extends PluginSettingTab {
 		setting1.addText((text) => {
 				text
 					.setPlaceholder('Enter a file name with "%n" where the name will go')
-					.setValue(this.plugin.settings.MapPinFilenameTemplateString)
-					.onChange(async (value) => {
+					.setValue(this.plugin.settings.MapPinFilename.template)
+					.onChange(async (value: string) => {
 						if (!this.isValidFilename(value)) {
-							let messageEl: string = "messageEl";
-							if (!requireApiVersion("1.8.7")) {
-								messageEl = "noticeEl";
-							}
-							(new Notice("Invalid filename. Avoid using: \\ / : * ? \" < > |", 3000) as any)
-								[messageEl]
+							const message: string = "Invalid filename. Avoid using: \\ / : * ? \" < > |";
+							new Notice(message, 3000)
+								.messageEl
 								.addClass("mod-warning");
 							return;
 						}
-						const newValue = value || "%n";
-						(window as any).mapPinFilenameTemplate.currentTemplateString = newValue;
-						this.plugin.settings.MapPinFilenameTemplateString = newValue;
+						const newValue: string = value || "%n";
+						this.plugin.settings.MapPinFilename.template = newValue;
 						await this.plugin.saveSettings();
-						output.textContent = (window as any).mapPinFilenameTemplate.generateMapPinFilename("Gondor");
+						output.textContent = this.plugin.settings.MapPinFilename.generate("Gondor");
 					});
 			});
 
@@ -61,7 +65,6 @@ export class CanvasMapPinSettingsTab extends PluginSettingTab {
 					.setLimits(40, 400, 10)
 					.setValue(this.plugin.settings.MapPinSize)
 					.onChange(async (value) => {
-						(window as any).mapPinSize = value;
 						this.plugin.settings.MapPinSize = value;
 						await this.plugin.saveSettings();
 					}),

@@ -85,22 +85,22 @@ export default class CanvasMapPinPlugin extends Plugin {
 
 	}
 
-	onunload() {
-		delete (window as any).mapPinSize;
-		delete (window as any).mapPinFilenameTemplate;
-	}
+	onunload() { }
 
 	async loadSettings() {
-		this.settings = Object.assign(
-			{},
-			DEFAULT_SETTINGS,
-			(await this.loadData()) as Partial<CanvasMapPinSettings>,
-		);
+		const loadedSettings = (await this.loadData()) as Partial<CanvasMapPinSettings>;
 
-		let mapPinSize = 0;
-		Object.defineProperty(window, "mapPinSize", {
-			get() { return mapPinSize; },
-			set(v) {
+		this.settings.MapPinFilename = {
+			template:  loadedSettings.MapPinFilename?.template || DEFAULT_SETTINGS.MapPinFilename.template,
+			generate: function(name: string) {
+				return this.template.replaceAll("%n", name).concat(".md");
+			}
+		};
+
+		let mapPinSize: number = 0;
+		Object.defineProperty(this.settings, "MapPinSize", {
+			get(): number { return mapPinSize; },
+			set(v: number) {
 				mapPinSize = v;
 				document.documentElement.style.setProperty("--map-pin-size", v + "px");
 /*
@@ -115,17 +115,10 @@ export default class CanvasMapPinPlugin extends Plugin {
 				});
 				if (canvases.length) canvases.forEach(canvas => processCanvas(canvas));
 */
-			},
-			configurable: true,
-		});
-		(window as any).mapPinSize = this.settings.MapPinSize; // induce side effect of setting CSS :root variable and modifying any open canvases
-
-		(window as any).mapPinFilenameTemplate = {
-			currentTemplateString: this.settings.MapPinFilenameTemplateString,
-			generateMapPinFilename: function(name: string) {
-				return (this.currentTemplateString + ".md").split("%n").join(name);
 			}
-		};
+		});
+		// induce side effect of setting CSS :root variable and modifying any open canvases
+		this.settings.MapPinSize = loadedSettings.MapPinSize || DEFAULT_SETTINGS.MapPinSize;
 	}
 
 	async saveSettings() {
@@ -141,7 +134,7 @@ export default class CanvasMapPinPlugin extends Plugin {
 	}
 	async getPinName(): Promise<string> {
 		return new Promise((resolve, reject) => {
-			new MapPinNameModal(this.app)
+			new MapPinNameModal(this)
 				.setValueCallback(value => resolve(value))
 				.open();
 		});
@@ -150,7 +143,7 @@ export default class CanvasMapPinPlugin extends Plugin {
 		// Add "Map Pin" media to Canvas
 		const canvas = (this.app.workspace.activeLeaf?.view as any).canvas;
 
-		const filename = (window as any).mapPinFilenameTemplate.generateMapPinFilename(name);
+		const filename = this.settings.MapPinFilename.generate(name);
 
 		let mapPinTFile: TFile | null = this.app.vault.getFileByPath(filename);
 		let fileCreated;
@@ -171,7 +164,7 @@ export default class CanvasMapPinPlugin extends Plugin {
 
 		const mapPin = canvas.createFileNode({
                         pos: canvas.pointer,
-                        size: { width: (window as any).mapPinSize, height: (window as any).mapPinSize },
+                        size: { width: this.settings.MapPinSize, height: this.settings.MapPinSize },
                         file: mapPinTFile,
                         save: true,
                         focus: false
@@ -327,8 +320,8 @@ export default class CanvasMapPinPlugin extends Plugin {
 	}
 
 	mappinify(mapPin: any) {
-		mapPin.width = (window as any).mapPinSize;
-		mapPin.height = (window as any).mapPinSize;
+		mapPin.width = this.settings.MapPinSize;
+		mapPin.height = this.settings.MapPinSize;
 		mapPin.canvas.markMoved(mapPin);
 		mapPin.nodeEl.classList.add("cmp-map-pin");
 		mapPin.nodeEl.dataset.mapPinName = mapPin.unknownData.mapPinName;
@@ -546,6 +539,11 @@ export default class CanvasMapPinPlugin extends Plugin {
 class MapPinNameModal extends Modal {
 	#input: HTMLInputElement | undefined;
 	#callback: undefined | ((s: string) => void);
+	#plugin: any;
+	constructor(plugin: any) {
+		super(plugin.app);
+		this.#plugin = plugin;
+	}
 	onOpen() {
 		this.contentEl.classList.add("cmp-map-pin-modal");
 		this.setTitle("Map Pin Name");
@@ -556,7 +554,7 @@ class MapPinNameModal extends Modal {
 		this.contentEl.createEl("p", {text: "Pins automatically link to, or create, a file with their generated filename:", cls: ""});
 		const output = this.contentEl.createEl("output", { cls: "" });
 		this.#input.addEventListener("input", () => {
-			output.textContent = this.#input?.value ? (window as any).mapPinFilenameTemplate.generateMapPinFilename(this.#input?.value) : "";
+			output.textContent = this.#input?.value ? this.#plugin.settings.MapPinFilename.generate(this.#input?.value) : "";
 		});
 
 		const settingsBtn = this.contentEl.createEl("button", {cls: "cmp-settings-button"});
