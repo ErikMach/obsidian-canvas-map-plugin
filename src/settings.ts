@@ -1,4 +1,4 @@
-import { App, requireApiVersion, PluginSettingTab, Setting, Notice } from 'obsidian';
+import { App, PluginSettingTab, Setting, Notice } from 'obsidian';
 import CanvasMapPinPlugin from './main';
 
 export interface CanvasMapPinSettings {
@@ -33,7 +33,7 @@ export class CanvasMapPinSettingsTab extends PluginSettingTab {
 		containerEl.empty();
 
 		const setting1 = new Setting(containerEl)
-			.setName('Map Pin Filename Template String')
+			.setName('Map Pin Filename Template')
 			.setDesc("When you name a map pin, it finds or creates a file with the generated filename. This template string generates the filename. All occurrences of '%n' are replaced with the name.");
 		setting1.descEl.createEl("p", {text: "Here's an example for a pin called 'Gondor':"});
 		setting1.descEl.createEl("br");

@@ -1,11 +1,18 @@
 import {
+	App,
 	Modal,
-	Setting,	
+	Setting,
+	SettingTab,	
 	Notice,
 	Plugin,
 	Menu,
 	TFile,
-	WorkspaceLeaf
+	View,
+	MarkdownView,
+	FileManager,
+	WorkspaceSidedock,
+	WorkspaceTabs,
+	WorkspaceLeaf,
 } from 'obsidian';
 import {
 	DEFAULT_SETTINGS,
@@ -16,26 +23,143 @@ import {
 type Point = { x: number; y: number };
 type BBox = { minX: number; maxX: number, minY: number , maxY: number };
 
+interface InternalWorkspaceSidedock extends WorkspaceSidedock {
+	children: Array<InternalWorkspaceTabs>
+}
+
+interface InternalWorkspaceTabs extends WorkspaceTabs {
+	type:		string,
+	children:	Array<WorkspaceLeaf>
+}
+
+interface InternalApp extends App {
+	internalPlugins: {
+		plugins: {
+			"file-explorer": {
+				instance: FileExplorerPlugin
+			}
+		}
+	};
+	setting: {
+		open:		() => void,
+		openTabById:	(id: string) => SettingTab,
+	}
+}
+
+interface FileExplorerPlugin extends Plugin {
+	revealInFolder: (file: TFile) => void;
+}
+
+interface InternalFileManager extends FileManager {
+	promptForFileRename: (file: TFile) => void;
+}
+
+/*
+interface CanvasWorkspaceLeaf extends WorkspaceLeaf {
+	view: CanvasView;
+}
+*/
+
+interface CanvasView extends View {
+	canvas: Canvas;
+}
+
+type CanvasData = {
+	nodes: Map<string, CanvasNode>
+}
+
+type CanvasNodeIndexData = {
+	children: Array<CanvasNode | CanvasNodeIndexDataDepth1>;
+}
+
+type CanvasNodeIndexDataDepth1 = {
+	children: Array<CanvasNode>;
+}
+
+interface Canvas {
+	app: App;
+	data: CanvasData;
+	nodeInteractionLayer: {
+		canvas:		Canvas,
+		interactionEl:	HTMLElement,
+		setTarget:	(el: CanvasNode) => void,
+		target:		CanvasNode,
+		render:		() => void
+	};
+	nodes: Map<string, CanvasNode>;
+	nodeIndex: {
+		data: CanvasNodeIndexData
+	};
+	draggingPin:	boolean | undefined;
+	pointer:	Point | undefined;
+	createFileNode:	(nodeInfo: {
+		pos: Point | undefined,
+		size: { width: number, height: number },
+		file: TFile,
+		save: boolean,
+		focus: boolean
+	}) => CanvasNode;
+	requestSave:	() => void;
+	removeNode:	(node: CanvasNode) => void;
+	zoomToBbox:	(bBox: BBox) => void;
+	markMoved:	(node: CanvasNode) => void;
+	selection:	Set<CanvasNode> | InterceptedSet;
+}
+
+interface CanvasNode {
+	id:		string,
+	app:		App,
+	canvas:		Canvas;
+	mapPinned:	boolean | undefined;
+	clicked:	boolean | undefined;
+	contextMenuOpen:boolean | undefined;
+	width:		number;
+	height:		number;
+	x:		number;
+	y:		number;
+	nodeEl:		HTMLElement;
+	focus:		() => void;
+	blur:		() => void;
+	onClick:	(e: MouseEvent | void) => Promise<void>;
+	onContextMenu:	(e: MouseEvent) => void;
+	getBBox:	() => BBox;
+	getPoint:	() => Point;
+	unknownData:	{
+		subtype:	string,
+		mapPinName:	string,
+		parent:		string,
+		offsetTop:	number,
+		offsetLeft:	number,
+	};
+	file:		TFile;
+	filePath:	string;
+	zIndex:		number;
+	renderedZIndex:	number;
+	renderZIndex:	() => void;
+	childMapPins:	Set<CanvasNode>;
+}
 
 export default class CanvasMapPinPlugin extends Plugin {
 	settings!: CanvasMapPinSettings;
+	mapPinSubtype: string = "map-pin";
 
 	async onload() {
 		await this.loadSettings();
 
-		(window as any).mapPinSubtype = "map-pin";
-
 		this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf: WorkspaceLeaf | null) => {
-			const canvas = (leaf?.view as any).canvas;
+			const canvas: Canvas = (leaf?.view as CanvasView).canvas;
 			if (!canvas) return;
 			if (this.shouldModifyCanvas(canvas)) {
 				if (Object.isEmpty(canvas.data)) {
 					// only reliable way to await the canvas.nodes being populated
 					void new Promise<void>((resolve, reject) => {
-						let data = canvas.data;
+						let data: CanvasData = canvas.data;
 						Object.defineProperty(canvas, "data", {
 							get() { return data; },
-							set(d: any) { d.nodes ? resolve() : {}; data=d; }
+							set(d: CanvasData) {
+								if (d.nodes) resolve();
+								data = d;
+							}
 						});
 					}).then(() => {
 						this.modifyCanvasMapPins(canvas);
@@ -51,16 +175,20 @@ export default class CanvasMapPinPlugin extends Plugin {
 					this.modifyCanvasMapPins(canvas)
 				}
 				// stop the nodeInteractionLayer from being placed over map pins
-				canvas.nodeInteractionLayer.setTarget = function (e: any) {
-					if (e?.unknownData.subtype === (window as any).mapPinSubtype || canvas.dragginPin) return;
-					this.target !== e && (this.target = e, this.render())
+				const mapPinSubtype = this.mapPinSubtype;
+				canvas.nodeInteractionLayer.setTarget = function (e: CanvasNode) {
+					if (e?.unknownData.subtype === mapPinSubtype || this.canvas.draggingPin) return;
+					if (this.target !== e) {
+						this.target = e;
+						this.render();
+					}
 				};
 			}
 		}));
 
 		this.addCommand({
 			id: 'add-canvas-map-pin',
-			name: 'Add a Map Pin on a Canvas',
+			name: 'Add a map pin on a canvas',
 			repeatable: false,
 			icon: 'map-pin-plus-inside',
 			hotkeys: [{key: 'M', modifiers: ['Ctrl']}],
@@ -105,9 +233,9 @@ export default class CanvasMapPinPlugin extends Plugin {
  * however, it causes canvases being loaded alongside this plugin (i.e. on normal start up) to throw an error since their data hasn't loaded yet.
  *  
 				const canvases = [];
-				this.app.workspace.iterateAllLeaves(leaf => {
-					if (leaf.width && leaf.view.canvas) {
-						canvases.push(leaf.view.canvas);
+				this.app.workspace.iterateAllLeaves((leaf: WorkspaceLeaf) => {
+					if (leaf.width && (leaf.view as CanvasView).canvas) {
+						canvases.push((leaf.view as CanvasView).canvas);
 					}
 				});
 				if (canvases.length) canvases.forEach(canvas => processCanvas(canvas));
@@ -144,7 +272,7 @@ export default class CanvasMapPinPlugin extends Plugin {
 	}
 	async addMapPin(name: string) {
 		// Add "Map Pin" media to Canvas
-		const canvas = (this.app.workspace.activeLeaf?.view as any).canvas;
+		const canvas = (this.app.workspace.activeLeaf?.view as CanvasView).canvas;
 
 		const filename = this.settings.MapPinFilename.generate(name);
 
@@ -157,15 +285,15 @@ export default class CanvasMapPinPlugin extends Plugin {
 					"Add some info about " + name + "..."
 				);
 				fileCreated = true;
-			} catch(e: any) {
-				new Notice(e, 3000);
+			} catch(e: unknown) {
+				new Notice(String(e), 3000);
 				return;
 			};
 		} else {
 			fileCreated = false;
 		}
 
-		const mapPin = canvas.createFileNode({
+		const mapPin: CanvasNode = canvas.createFileNode({
                         pos: canvas.pointer,
                         size: { width: this.settings.MapPinSize, height: this.settings.MapPinSize },
                         file: mapPinTFile,
@@ -174,7 +302,7 @@ export default class CanvasMapPinPlugin extends Plugin {
 		});
 
 		Object.assign(mapPin.unknownData, {
-			subtype: (window as any).mapPinSubtype,
+			subtype: this.mapPinSubtype,
 			mapPinName: name
 		});
 
@@ -183,22 +311,16 @@ export default class CanvasMapPinPlugin extends Plugin {
 		this.dragPin(mapPin, false, fileCreated);
 
 	}
-	shouldModifyCanvas(canvas: any) {
+	shouldModifyCanvas(canvas: Canvas) {
 		// modify if...
 		return (
 			// ...canvas has no nodes (initialised for 1st time)
 			!canvas.nodes.size ||
-			(
-				// ...or it has been initialised and...
-				canvas.nodes.size &&
-				// ...it contains map pins and...
-				canvas.nodes.values().find((node: any) => node.unknownData.subtype === (window as any).mapPinSubtype) &&
-				// ...the map pins haven't been initialised.
-				canvas.nodes.values().find((node: any) => node.unknownData.subtype === (window as any).mapPinSubtype && !node.mapPinned)
-			)
+			// ...it contains map pins that haven't been initialised
+			Array.from(canvas.nodes.values()).find((node: CanvasNode) => node.unknownData.subtype === this.mapPinSubtype && !node.mapPinned)
 		);
 	}
-	dragPin(mapPin: any, returnToInitialPos: boolean, deleteFileOnNullDrop: boolean | undefined) {
+	dragPin(mapPin: CanvasNode, returnToInitialPos: boolean, deleteFileOnNullDrop: boolean | undefined) {
 		const canvas = mapPin.canvas;
 		canvas.draggingPin = true;
 
@@ -223,12 +345,17 @@ export default class CanvasMapPinPlugin extends Plugin {
 		const pointInBox = (point: Point, bBox: BBox) => {
 			return bBox.minX <= point.x && bBox.minY <= point.y && bBox.maxX >= point.x && bBox.maxY >= point.y;
 		};
-		// canvas.nodeIndex.data.children are sometimes [any] and sometimes [{children:[any]}]
-		const nodes = canvas.nodeIndex.data.children.flatMap((obj: any) => obj.children ? obj.children : obj);
+
+		// canvas.nodeIndex.data.children are sometimes Array<CanvasNode> and sometimes [{children:Array<CanvasNode>}]
+		const nodes: Array<CanvasNode> = canvas
+			.nodeIndex
+			.data
+			.children
+			.flatMap((obj: CanvasNodeIndexDataDepth1 | CanvasNode): Array<CanvasNode> => 'children' in obj ? obj.children : [obj]);
 		const dropZones = nodes
-			.filter((n: any) => n.id !== mapPin.id && imageExts.includes(n.file?.extension))
-			.sort((e: any, t: any) => t.zIndex - e.zIndex)
-			.map((t: any) => t.getBBox());
+			.filter((n: CanvasNode) => n.id !== mapPin.id && imageExts.includes(n.file?.extension))
+			.sort((e: CanvasNode, t: CanvasNode) => t.zIndex - e.zIndex)
+			.map((t: CanvasNode) => t.getBBox());
 
 		if (!dropZones.find((z: BBox) => pointInBox(mapPin.getPoint(), z))) {mapPin.nodeEl.classList.add("cmp-no-drop");}
 
@@ -240,7 +367,7 @@ export default class CanvasMapPinPlugin extends Plugin {
 				pointerValue = v;
 				mapPin.x = Math.round(v.x);
 				mapPin.y = Math.round(v.y);
-				this.markMoved(mapPin);  // rerenders just this element in next frame ...I assume
+				(this as Canvas).markMoved(mapPin);  // rerenders just this element in next frame ...I assume
 
 				const collision = dropZones.find((z: BBox) => pointInBox(mapPin.getPoint(), z));
 				if (collision && !lastCollision) {
@@ -253,7 +380,7 @@ export default class CanvasMapPinPlugin extends Plugin {
 			},
 		});
 
-		const resetPointer = (canvas: any) => {
+		const resetPointer = (canvas: Canvas) => {
 			const lastPointerValue = canvas.pointer;
 			delete canvas.pointer;
 			canvas.pointer = lastPointerValue;
@@ -265,9 +392,9 @@ export default class CanvasMapPinPlugin extends Plugin {
 			controller.abort();
 			delete canvas.draggingPin;
 
-			const parentMap =  nodes
-				.filter((n: any) => n.id !== mapPin.id && imageExts.includes(n.file?.extension) && pointInBox(mapPin.getPoint(), n.getBBox()))
-				.sort((e: any, t: any) => t.zIndex - e.zIndex)[0];
+			const parentMap: CanvasNode | undefined = nodes
+				.filter((n: CanvasNode) => n.id !== mapPin.id && imageExts.includes(n.file?.extension) && pointInBox(mapPin.getPoint(), n.getBBox()))
+				.sort((e: CanvasNode, t: CanvasNode) => t.zIndex - e.zIndex)[0];
 			if (!parentMap) {
 				if (initialPos) {
 					canvas.pointer = initialPos;	
@@ -275,7 +402,8 @@ export default class CanvasMapPinPlugin extends Plugin {
 					canvas.removeNode(mapPin);
 					canvas.requestSave();
 					if (deleteFileOnNullDrop) {
-						canvas.app.vault.delete(mapPin.file);
+						// We created this file silently, so we should delete it thus
+						void canvas.app.vault.delete(mapPin.file);
 					}
 				}
 				resetPointer(canvas); // deregister our hijacking
@@ -302,7 +430,8 @@ export default class CanvasMapPinPlugin extends Plugin {
 				canvas.pointer = initialPos;	
 			} else {
 				if (deleteFileOnNullDrop) {
-					canvas.app.vault.delete(mapPin.file);
+					// We created this file silently, so we should delete it thus
+					void canvas.app.vault.delete(mapPin.file);
 				}
 				canvas.removeNode(mapPin);
 			}
@@ -311,18 +440,16 @@ export default class CanvasMapPinPlugin extends Plugin {
 		}, {signal: controller.signal});
 	}
 
-	modifyCanvasMapPins(canvas: any) {
-		canvas
-			.nodes
-			.values()
-			.filter((node: any) => node.unknownData.subtype === (window as any).mapPinSubtype)
-			.forEach((pin: any) => { this.mappinify(pin)});
+	modifyCanvasMapPins(canvas: Canvas) {
+		Array.from( canvas.nodes.values() )
+			.filter((node: CanvasNode) => node.unknownData.subtype === this.mapPinSubtype)
+			.forEach((pin: CanvasNode) => { this.mappinify(pin) });
 		// stop the selection menu from coming up on map pins
 		// only needed for newly created map pins
-		canvas.selection = new InterceptedSet( canvas.selection.values().toArray() );
+		canvas.selection = new InterceptedSet( Array.from(canvas.selection.values()), this.mapPinSubtype );
 	}
 
-	mappinify(mapPin: any) {
+	mappinify(mapPin: CanvasNode) {
 		mapPin.width = this.settings.MapPinSize;
 		mapPin.height = this.settings.MapPinSize;
 		mapPin.canvas.markMoved(mapPin);
@@ -332,9 +459,10 @@ export default class CanvasMapPinPlugin extends Plugin {
 		mapPin.blur = () => {};
 		// The following two event listeners need to be registered only for newly created pins
 		// and pins that the canvas randomly decides don't get their own onClick and onContextMenu
-		mapPin.nodeEl.addEventListener("contextmenu", (e: Event) => {e.preventDefault(); mapPin.onContextMenu(e);}, true);
-		mapPin.nodeEl.addEventListener("click", (e: Event) => {e.preventDefault(); mapPin.onClick()}, true);
+		mapPin.nodeEl.addEventListener("contextmenu", (e: MouseEvent) => {e.preventDefault(); mapPin.onContextMenu(e);}, true);
+		mapPin.nodeEl.addEventListener("click", (e: MouseEvent) => {e.preventDefault(); void mapPin.onClick()}, true);
 
+		const dragPin = this.dragPin.bind(this);
 		mapPin.onContextMenu = function(e: MouseEvent) {
 			if (this.contextMenuOpen) return;
 			this.contextMenuOpen = true;
@@ -363,25 +491,27 @@ export default class CanvasMapPinPlugin extends Plugin {
 						})
 				);
 	*/
-				const fileManager = this.app.fileManager;
 				menu.addItem((item) =>
 					item
 						.setTitle('Rename file...')
 						.setIcon('pen-line')
 						.onClick(() => {
-							fileManager.promptForFileRename(mapPin.file);
+							(this.app.fileManager as InternalFileManager).promptForFileRename(mapPin.file);
 						})
 				);
 			} else {
 				// "add file"
 			}
 
-			const fileExplorer = this.app.internalPlugins.plugins["file-explorer"].instance;
 			menu.addItem((item) =>
 				item
 					.setTitle('Reveal file in navigation')
 					.setIcon('folder-open')
 					.onClick(() => {
+						const fileExplorer: FileExplorerPlugin = (this.app as InternalApp)
+							.internalPlugins
+							.plugins["file-explorer"]
+							.instance;
 						fileExplorer.revealInFolder(mapPin.file);
 					})
 			);
@@ -393,11 +523,10 @@ export default class CanvasMapPinPlugin extends Plugin {
 					.setTitle('Zoom to selection')
 					.setIcon('zoom-to-selection')
 					.onClick(() => {
-						mapPin.canvas.zoomToBbox(this.getBBox());
+						this.canvas.zoomToBbox(this.getBBox());
 					})
 			);
 
-			const dragPin = this.dragPin;
 			menu.addItem((item) =>
 				item
 					.setTitle('Move pin')
@@ -440,20 +569,24 @@ export default class CanvasMapPinPlugin extends Plugin {
 		mapPin.onClick = async function() {
 			if (this.clicked || this.canvas.draggingPin) return;
 			this.clicked = true;
-			(window as any).setTimeout(() => {mapPin.clicked = false}, 0);
+			window.setTimeout(() => {mapPin.clicked = false}, 0);
 
-			const openPreview = this.app.workspace
-				.leftSplit
+			const openPreview = (this.app.workspace
+				.leftSplit as InternalWorkspaceSidedock)
 				.children
-				.filter((section: any) => section.type === "tabs")[0]
-				.children
-				.filter((leaf: any) => leaf.view.file?.name === mapPin.filePath)[0];
+				.filter((section: InternalWorkspaceTabs) => section.type === "tabs")[0]
+				?.children
+				.filter((leaf: WorkspaceLeaf) => (leaf.view as MarkdownView).file?.name === mapPin.filePath)[0];
 			if (openPreview) {
 				await this.app.workspace.revealLeaf(openPreview);
 				return;
 			}
 			const preview = this.app.workspace.getLeftLeaf(false);
-			preview.setViewState({
+			if (!preview) {
+				new Notice("Error: Could not get left leaf", 2000).messageEl.addClass("mod-error");
+				return;
+			}
+			await preview.setViewState({
 				type: 'markdown',
 				state: {
 					active: true,
@@ -465,20 +598,25 @@ export default class CanvasMapPinPlugin extends Plugin {
 		};
 
 		mapPin.mapPinned = true;
-		const parent = mapPin.canvas.nodes.get(mapPin.unknownData.parent);
+		const parent: CanvasNode | undefined = mapPin.canvas.nodes.get(mapPin.unknownData.parent);
+		if (!parent) {
+			new Notice("A map pin was found with no parent map", 2000).messageEl.addClass("mod-error");
+			return;
+		}
 		if (parent.childMapPins) {
 			parent.childMapPins.add(mapPin);
 			return;
 		}
 		Object.defineProperty(parent, "childMapPins", {value: new Set([mapPin])});
+
 		let {x, y, width, height, renderedZIndex} = parent;
 		Object.defineProperty(parent, "x", {
 			get() {return x;},
 			set(n: number) {
 				if (x===n) return;
-				this.childMapPins.forEach((c: any) => {
+				(this as CanvasNode).childMapPins.forEach((c: CanvasNode) => {
 					c.x += n - x;
-					this.canvas.markMoved(c);
+					(this as CanvasNode).canvas.markMoved(c);
 				});
 				x=n;
 			}
@@ -487,9 +625,9 @@ export default class CanvasMapPinPlugin extends Plugin {
 			get() {return y;},
 			set(n: number) {
 				if (y===n) return;
-				this.childMapPins.forEach((c: any) => {
+				(this as CanvasNode).childMapPins.forEach((c: CanvasNode) => {
 					c.y += n - y;
-					this.canvas.markMoved(c);
+					(this as CanvasNode).canvas.markMoved(c);
 				});
 				y=n;
 			}
@@ -498,9 +636,9 @@ export default class CanvasMapPinPlugin extends Plugin {
 			get() {return width;},
 			set(n: number) {
 				if (width === n) return;
-				this.childMapPins.forEach((c: any) => {
+				(this as CanvasNode).childMapPins.forEach((c: CanvasNode) => {
 					c.x = c.unknownData.offsetLeft * n + parent.x;
-					this.canvas.markMoved(c);
+					(this as CanvasNode).canvas.markMoved(c);
 				});
 				width = n;
 			}
@@ -509,9 +647,9 @@ export default class CanvasMapPinPlugin extends Plugin {
 			get() {return height;},
 			set(n: number) {
 				if (height === n) return;
-				this.childMapPins.forEach((c: any) => {
+				(this as CanvasNode).childMapPins.forEach((c: CanvasNode) => {
 					c.y = c.unknownData.offsetTop * n + parent.y;
-					this.canvas.markMoved(c);
+					(this as CanvasNode).canvas.markMoved(c);
 				});
 				height = n;
 			}
@@ -520,7 +658,7 @@ export default class CanvasMapPinPlugin extends Plugin {
 			get() {return renderedZIndex;},
 			set(n: number) {
 				if (renderedZIndex === n) return;
-				this.childMapPins.forEach((c: any) => {
+				(this as CanvasNode).childMapPins.forEach((c: CanvasNode) => {
 					c.zIndex = n + 1;
 					c.renderZIndex();
 				});
@@ -528,22 +666,13 @@ export default class CanvasMapPinPlugin extends Plugin {
 			}
 		});
 	}
-
-	_processCanvas(canvas: any) {
-		this.modifyCanvasMapPins(canvas);
-		// stop the nodeInteractionLayer from being placed over map pins
-		canvas.nodeInteractionLayer.setTarget = function (e: any) {
-			if (e?.unknownData.subtype === (window as any).mapPinSubtype) return;
-			this.target !== e && (this.target = e, this.render())
-		};
-	}
 }
 
 class MapPinNameModal extends Modal {
 	#input: HTMLInputElement | undefined;
 	#callback: undefined | ((s: string) => void);
-	#plugin: any;
-	constructor(plugin: any) {
+	#plugin: CanvasMapPinPlugin;
+	constructor(plugin: CanvasMapPinPlugin) {
 		super(plugin.app);
 		this.#plugin = plugin;
 	}
@@ -552,7 +681,7 @@ class MapPinNameModal extends Modal {
 		this.setTitle("Map Pin Name");
 
 		this.#input = this.contentEl.createEl("input", {placeholder: "Pin location...", cls: "cmp-name-input"});
-		this.#input.addEventListener("keydown", (e: KeyboardEvent) => {e.key === "Enter" ? this.returningClose() : {} });
+		this.#input.addEventListener("keydown", (e: KeyboardEvent) => e.key === "Enter" ? this.returningClose() : {} );
 
 		this.contentEl.createEl("p", {text: "Pins automatically link to, or create, a file with their generated filename:", cls: ""});
 		const output = this.contentEl.createEl("output", { cls: "" });
@@ -562,10 +691,10 @@ class MapPinNameModal extends Modal {
 
 		const settingsBtn = this.contentEl.createEl("button", {cls: "cmp-settings-button"});
 		settingsBtn.addEventListener("click", () => {
-			(this.app as any).setting.open();
-			const settingsTab = (this.app as any).setting.openTabById("canvas-map-pins");
-			window.setTimeout(() => settingsTab.containerEl.children[0].classList.add("is-flashing"), 800);
-			(window as any).setTimeout(() => settingsTab.containerEl.children[0].classList.remove("is-flashing"), 1800);
+			(this.app as InternalApp).setting.open();
+			const settingsTab = (this.app as InternalApp).setting.openTabById("canvas-map-pins");
+			window.setTimeout(() => settingsTab.containerEl.children[0]?.classList.add("is-flashing"), 800);
+			window.setTimeout(() => settingsTab.containerEl.children[0]?.classList.remove("is-flashing"), 1800);
 		});
 
 		new Setting(this.contentEl)
@@ -600,12 +729,14 @@ class MapPinNameModal extends Modal {
 	}
 }
 
-class InterceptedSet extends Set<any> {
-	constructor(data: any) {
+class InterceptedSet extends Set<CanvasNode> {
+	#mapPinSubtype: string;
+	constructor(data: Array<CanvasNode>, mapPinSubtype: string) {
 		super(data);
+		this.#mapPinSubtype = mapPinSubtype;
 	}
-	add(v: any): this {
-		if (v.unknownData.subtype !== (window as any).mapPinSubtype) {
+	add(v: CanvasNode): this {
+		if (v.unknownData.subtype !== this.#mapPinSubtype) {
 			return super.add(v);
 		}
 		return this;
