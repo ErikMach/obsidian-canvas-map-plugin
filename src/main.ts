@@ -477,6 +477,33 @@ export default class CanvasMapPinPlugin extends Plugin {
 		// stop the selection menu from coming up on map pins
 		// only needed for newly created map pins
 		canvas.selection = new InterceptedSet( Array.from(canvas.selection.values()), this.mapPinSubtype );
+
+		canvas.cardMenuEl.createDiv(
+			{cls: "canvas-card-menu-button mod-draggable"},
+			(div: HTMLElement) => {
+				div.setAttribute("aria-label", "Drag to add map pin");
+				div.setAttribute("data-tooltip-position", "top");
+				setIcon(div, "lucide-map-pin-plus");
+				div.addEventListener("click", () => {
+					void this.promtCreateMapPin(canvas);
+		                });
+				div.addEventListener("pointerdown", (e: MouseEvent) => {
+					this.dragOrClick(div).then((drag: boolean) => {
+						if (drag) void this.addMapPin("", canvas, true);
+					})
+					.catch(() => {});
+				});
+			}
+		);
+	}
+
+	// returns true if drag, false if click
+	dragOrClick(el: HTMLElement): Promise<boolean> {
+		const abort = new AbortController();
+		return new Promise((resolve, reject) => {
+			el.addEventListener("mousemove", () => {resolve(true);  abort.abort();}, {once: true, signal: abort.signal});
+			el.addEventListener("pointerup", () => {resolve(false); abort.abort();}, {once: true, signal: abort.signal});
+		});
 	}
 
 	mappinify(mapPin: CanvasNode) {
