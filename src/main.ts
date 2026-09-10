@@ -56,11 +56,9 @@ interface InternalFileManager extends FileManager {
 	promptForFileRename: (file: TFile) => void;
 }
 
-/*
-interface CanvasWorkspaceLeaf extends WorkspaceLeaf {
-	view: CanvasView;
+interface InternalWorkspaceLeaf extends WorkspaceLeaf {
+	width: number;
 }
-*/
 
 interface CanvasView extends View {
 	canvas: Canvas;
@@ -236,21 +234,17 @@ export default class CanvasMapPinPlugin extends Plugin {
 		let mapPinSize: number = 0;
 		Object.defineProperty(this.settings, "MapPinSize", {
 			get(): number { return mapPinSize; },
-			set(v: number) {
+			set: (v: number) => {
 				mapPinSize = v;
 				document.documentElement.style.setProperty("--map-pin-size", v + "px");
-/*
- * This code will render any canvases that have map pins if in view, whether focussed or not.
- * however, it causes canvases being loaded alongside this plugin (i.e. on normal start up) to throw an error since their data hasn't loaded yet.
- *  
-				const canvases = [];
+
+				const canvases: Array<Canvas> = [];
 				this.app.workspace.iterateAllLeaves((leaf: WorkspaceLeaf) => {
-					if (leaf.width && (leaf.view as CanvasView).canvas) {
+					if ((leaf as InternalWorkspaceLeaf).width && (leaf.view as CanvasView).canvas) {
 						canvases.push((leaf.view as CanvasView).canvas);
 					}
 				});
-				if (canvases.length) canvases.forEach(canvas => processCanvas(canvas));
-*/
+				if (canvases.length) canvases.forEach(canvas => this.resizePins(canvas));
 			}
 		});
 		// induce side effect of setting CSS :root variable and modifying any open canvases
@@ -260,6 +254,17 @@ export default class CanvasMapPinPlugin extends Plugin {
 	async saveSettings() {
 		await this.saveData(this.settings);
 	}
+
+	resizePins(canvas: Canvas) {
+		Array.from( canvas.nodes.values() )
+			.filter((node: CanvasNode) => node.unknownData.subtype === this.mapPinSubtype)
+			.forEach((pin: CanvasNode) => {
+				pin.width = this.settings.MapPinSize;
+				pin.height = this.settings.MapPinSize;
+				canvas.markMoved(pin);
+			});
+	}
+
 	shouldModifyCanvas(canvas: Canvas) {
 		// modify if...
 		return (
