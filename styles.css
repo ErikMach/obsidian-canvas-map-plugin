@@ -2,6 +2,10 @@
 	--map-pin-size: 60px;
 }
 
+.notice-message.cmp-mod-error {
+	color: var(--text-error);
+}
+
 .cmp-map-pin-modal output,
 .cmp-map-pin-modal p {
     opacity: 0.6;
