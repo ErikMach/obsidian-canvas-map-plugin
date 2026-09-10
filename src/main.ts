@@ -152,8 +152,18 @@ export default class CanvasMapPinPlugin extends Plugin {
 	async onload() {
 		await this.loadSettings();
 
+		// trigger map pin render for any open visible canvases on initial load
 		this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf: WorkspaceLeaf | null) => {
-			const canvas: Canvas = (leaf?.view as CanvasView).canvas;
+			this.app.workspace.iterateAllLeaves((leaf: WorkspaceLeaf) => {
+				if ((leaf as InternalWorkspaceLeaf).width && (leaf.view as CanvasView).canvas) {
+					this.app.workspace.setActiveLeaf(leaf);
+				}
+			});
+		}, {once: true}));
+
+
+		this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf: WorkspaceLeaf | null) => {
+			const canvas: Canvas = (leaf?.view as CanvasView)?.canvas;
 			if (!canvas) return;
 			if (this.shouldModifyCanvas(canvas)) {
 				if (Object.isEmpty(canvas.data)) {
@@ -238,13 +248,11 @@ export default class CanvasMapPinPlugin extends Plugin {
 				mapPinSize = v;
 				document.documentElement.style.setProperty("--map-pin-size", v + "px");
 
-				const canvases: Array<Canvas> = [];
 				this.app.workspace.iterateAllLeaves((leaf: WorkspaceLeaf) => {
 					if ((leaf as InternalWorkspaceLeaf).width && (leaf.view as CanvasView).canvas) {
-						canvases.push((leaf.view as CanvasView).canvas);
+						this.resizePins((leaf.view as CanvasView).canvas);
 					}
 				});
-				if (canvases.length) canvases.forEach(canvas => this.resizePins(canvas));
 			}
 		});
 		// induce side effect of setting CSS :root variable and modifying any open canvases
