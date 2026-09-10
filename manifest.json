@@ -1,7 +1,7 @@
 {
 	"id": "canvas-map-pins",
 	"name": "Canvas Map Pins",
-	"version": "1.0.5",
+	"version": "1.0.6",
 	"minAppVersion": "1.8.7",
 	"description": "Extends the Canvas Plugin with Map Pins.",
 	"author": "ErikMach",
