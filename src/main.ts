@@ -155,11 +155,9 @@ export default class CanvasMapPinPlugin extends Plugin {
 
 		// trigger map pin render for any open visible canvases on initial load
 		this.app.workspace.onLayoutReady(() => {
-		this.app.workspace.iterateAllLeaves((leaf: WorkspaceLeaf) => {
+			this.app.workspace.iterateAllLeaves((leaf: WorkspaceLeaf) => {
 				if ((leaf as InternalWorkspaceLeaf).width && (leaf.view as CanvasView).canvas) {
 					window.requestAnimationFrame(() => this.app.workspace.trigger("active-leaf-change", leaf));
-
-
 				}
 			});
 		});
