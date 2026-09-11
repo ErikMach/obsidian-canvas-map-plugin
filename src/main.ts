@@ -81,6 +81,7 @@ interface Canvas {
 	data: CanvasData;
 	nodes: Map<string, CanvasNode>;
 	cardMenuEl: HTMLElement;
+	addMapPinEl: HTMLElement | undefined;
 	nodeIndex: {
 		data: CanvasNodeIndexData
 	};
@@ -153,13 +154,15 @@ export default class CanvasMapPinPlugin extends Plugin {
 		await this.loadSettings();
 
 		// trigger map pin render for any open visible canvases on initial load
-		this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf: WorkspaceLeaf | null) => {
-			this.app.workspace.iterateAllLeaves((leaf: WorkspaceLeaf) => {
+		this.app.workspace.onLayoutReady(() => {
+		this.app.workspace.iterateAllLeaves((leaf: WorkspaceLeaf) => {
 				if ((leaf as InternalWorkspaceLeaf).width && (leaf.view as CanvasView).canvas) {
-					this.app.workspace.setActiveLeaf(leaf);
+					window.requestAnimationFrame(() => this.app.workspace.trigger("active-leaf-change", leaf));
+
+
 				}
 			});
-		}, {once: true}));
+		});
 
 
 		this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf: WorkspaceLeaf | null) => {
@@ -188,7 +191,7 @@ export default class CanvasMapPinPlugin extends Plugin {
 						});
 					});
 				} else {
-					this.modifyCanvasMapPins(canvas)
+					this.modifyCanvasMapPins(canvas);
 				}
 				// stop the nodeInteractionLayer from being placed over map pins
 				const mapPinSubtype = this.mapPinSubtype;
@@ -227,7 +230,16 @@ export default class CanvasMapPinPlugin extends Plugin {
 
 	}
 
-	onunload() { }
+	onunload() {
+		this.app.workspace.iterateAllLeaves((leaf: WorkspaceLeaf) => {
+			if ((leaf as InternalWorkspaceLeaf).width && (leaf.view as CanvasView).canvas) {
+				const canvas = (leaf.view as CanvasView).canvas;
+				canvas.addMapPinEl?.remove();
+				delete canvas.addMapPinEl;
+				canvas.selection = new Set( Array.from(canvas.selection.values()) );
+			}
+		});
+	}
 
 	async loadSettings() {
 		const loadedSettings = (await this.loadData()) as Partial<CanvasMapPinSettings>;
@@ -278,6 +290,8 @@ export default class CanvasMapPinPlugin extends Plugin {
 		return (
 			// ...canvas has no nodes (initialised for 1st time), or...
 			!canvas.nodes.size ||
+			// ... canvas has no map pins, or...
+			!Array.from(canvas.nodes.values()).find((node: CanvasNode) => node.unknownData.subtype === this.mapPinSubtype) ||
 			// ...it contains uninitialised map pins
 			Array.from(canvas.nodes.values()).find((node: CanvasNode) => node.unknownData.subtype === this.mapPinSubtype && !node.mapPinned)
 		);
@@ -486,12 +500,13 @@ export default class CanvasMapPinPlugin extends Plugin {
 	modifyCanvasMapPins(canvas: Canvas) {
 		Array.from( canvas.nodes.values() )
 			.filter((node: CanvasNode) => node.unknownData.subtype === this.mapPinSubtype)
-			.forEach((pin: CanvasNode) => { this.mappinify(pin) });
+			.forEach((pin: CanvasNode) => this.mappinify(pin));
 		// stop the selection menu from coming up on map pins
 		// only needed for newly created map pins
 		canvas.selection = new InterceptedSet( Array.from(canvas.selection.values()), this.mapPinSubtype );
 
-		canvas.cardMenuEl.createDiv(
+		if (canvas.addMapPinEl) return;
+		canvas.addMapPinEl = canvas.cardMenuEl.createDiv(
 			{cls: "canvas-card-menu-button mod-draggable"},
 			(div: HTMLElement) => {
 				div.setAttribute("aria-label", "Drag to add map pin");
