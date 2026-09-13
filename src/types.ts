@@ -13,11 +13,9 @@ export type {
 	Canvas,
 	CanvasNode,
 };
-
 import {
 	App,
 	SettingTab,	
-	Plugin,
 	TFile,
 	View,
 	FileManager,
@@ -58,7 +56,7 @@ interface InternalApp extends App {
 	}
 }
 
-interface FileExplorerPlugin extends Plugin {
+interface FileExplorerPlugin {
 	revealInFolder: (file: TFile) => void;
 }
 
