@@ -1,150 +1,35 @@
 import {
-	App,
-	Modal,
-	Setting,
-	SettingTab,	
 	Notice,
 	Plugin,
 	Menu,
 	TFile,
 	View,
 	MarkdownView,
-	FileManager,
-	WorkspaceSidedock,
-	WorkspaceTabs,
 	WorkspaceLeaf,
-
-setIcon
+	setIcon,
 } from 'obsidian';
 import {
 	DEFAULT_SETTINGS,
 	CanvasMapPinSettings,
 	CanvasMapPinSettingsTab,
 } from './settings';
-
-type Point = { x: number; y: number };
-type BBox = { minX: number; maxX: number, minY: number , maxY: number };
-
-interface InternalWorkspaceSidedock extends WorkspaceSidedock {
-	children: Array<InternalWorkspaceTabs>
-}
-
-interface InternalWorkspaceTabs extends WorkspaceTabs {
-	type:		string,
-	children:	Array<WorkspaceLeaf>
-}
-
-interface InternalApp extends App {
-	internalPlugins: {
-		plugins: {
-			"file-explorer": {
-				instance: FileExplorerPlugin
-			}
-		}
-	};
-	setting: {
-		open:		() => void,
-		openTabById:	(id: string) => SettingTab,
-	}
-}
-
-interface FileExplorerPlugin extends Plugin {
-	revealInFolder: (file: TFile) => void;
-}
-
-interface InternalFileManager extends FileManager {
-	promptForFileRename: (file: TFile) => void;
-}
-
-interface InternalWorkspaceLeaf extends WorkspaceLeaf {
-	width: number;
-}
-
-interface CanvasView extends View {
-	canvas: Canvas;
-}
-
-type CanvasData = {
-	nodes: Map<string, CanvasNode>
-}
-
-type CanvasNodeIndexData = {
-	children: Array<CanvasNode | CanvasNodeIndexDataDepth1>;
-}
-
-type CanvasNodeIndexDataDepth1 = {
-	children: Array<CanvasNode>;
-}
-
-interface Canvas {
-	app: App;
-	data: CanvasData;
-	nodes: Map<string, CanvasNode>;
-	cardMenuEl: HTMLElement;
-	addMapPinEl: HTMLElement | undefined;
-	nodeIndex: {
-		data: CanvasNodeIndexData
-	};
-	nodeInteractionLayer: {
-		canvas:		Canvas,
-		interactionEl:	HTMLElement,
-		setTarget:	(el: CanvasNode) => void,
-		target:		CanvasNode,
-		render:		() => void
-	};
-	selection:	Set<CanvasNode> | InterceptedSet;
-	draggingPin:	boolean | undefined;
-	pointer:	Point | undefined;
-	requestSave:	() => void;
-	removeNode:	(node: CanvasNode) => void;
-	zoomToBbox:	(bBox: BBox) => void;
-	markMoved:	(node: CanvasNode) => void;
-	createFileNode:	(nodeInfo: {
-		pos: Point | undefined,
-		size: { width: number, height: number },
-		/* eslint-disable-next-line @typescript-eslint/no-empty-object-type --
-		 * Either a TFile or an empty object can be passed in here
-		 * "no file" cannot be anything other than `{}`
-		**/
-		file: TFile | {},
-		save: boolean,
-		focus: boolean
-	}) => CanvasNode;
-}
-
-interface CanvasNode {
-	id:		string,
-	app:		App,
-	canvas:		Canvas;
-	width:		number;
-	height:		number;
-	x:		number;
-	y:		number;
-	nodeEl:		HTMLElement;
-	file:		TFile | null;
-	filePath:	string;
-	zIndex:		number;
-	renderedZIndex:	number;
-	mapPinned:	boolean | undefined;
-	clicked:	boolean | undefined;
-	contextMenuOpen:boolean | undefined;
-	childMapPins:	Set<CanvasNode>;
-	unknownData:	{
-		subtype:	string,
-		mapPinName:	string,
-		parent:		string,
-		offsetTop:	number,
-		offsetLeft:	number,
-	};
-	focus:		() => void;
-	blur:		() => void;
-	renderZIndex:	() => void;
-	setFile:	(f: TFile) => void;
-	onClick:	(e: MouseEvent | void) => Promise<void>;
-	onContextMenu:	(e: MouseEvent) => void;
-	getBBox:	() => BBox;
-	getPoint:	() => Point;
-}
+import {
+	Point,
+	BBox,
+	InternalWorkspaceSidedock,
+	InternalWorkspaceTabs,
+	InternalApp,
+	FileExplorerPlugin,
+	InternalFileManager,
+	InternalWorkspaceLeaf,
+	CanvasView,
+	CanvasData,
+	CanvasNodeIndexDataDepth1,
+	Canvas,
+	CanvasNode,
+} from './types';
+import { InterceptedSet } from './canvasNodeOverride';
+import { MapPinNameModal } from './modals';
 
 export default class CanvasMapPinPlugin extends Plugin {
 	settings!: CanvasMapPinSettings;
@@ -752,81 +637,5 @@ export default class CanvasMapPinPlugin extends Plugin {
 				renderedZIndex = n;
 			}
 		});
-	}
-}
-
-class MapPinNameModal extends Modal {
-	#input: HTMLInputElement | undefined;
-	#callback: undefined | ((s: string) => void);
-	#plugin: CanvasMapPinPlugin;
-	constructor(plugin: CanvasMapPinPlugin) {
-		super(plugin.app);
-		this.#plugin = plugin;
-	}
-	onOpen() {
-		this.contentEl.classList.add("cmp-map-pin-modal");
-		this.setTitle("Map pin name");
-
-		this.#input = this.contentEl.createEl("input", {placeholder: "Pin location...", cls: "cmp-name-input"});
-		this.#input.addEventListener("keydown", (e: KeyboardEvent) => e.key === "Enter" ? this.close() : {} );
-
-		this.contentEl.createEl("p", {text: "Pins automatically link to, or create, a file with their generated filename:", cls: ""});
-		const output = this.contentEl.createEl("output", { cls: "" });
-		this.#input.addEventListener("input", () => {
-			output.textContent = this.#input?.value ? this.#plugin.settings.MapPinFilename.generate(this.#input?.value) : "";
-		});
-
-		const settingsBtn = this.contentEl.createEl("button", {cls: "cmp-settings-button"});
-		settingsBtn.addEventListener("click", () => {
-			(this.app as InternalApp).setting.open();
-			const settingsTab = (this.app as InternalApp).setting.openTabById("canvas-map-pins");
-			window.setTimeout(() => settingsTab.containerEl.children[0]?.classList.add("is-flashing"), 800);
-			window.setTimeout(() => settingsTab.containerEl.children[0]?.classList.remove("is-flashing"), 1800);
-		});
-
-		new Setting(this.contentEl)
-			.addButton(btn => btn
-				.setButtonText('Submit')
-				.setCta()
-				.onClick(() => {
-					this.close();
-				})
-			)
-			.addButton(btn => btn
-				.setButtonText('Cancel')
-				.setClass("mod-cancel")
-				.onClick(() => {
-					this.cancel();
-				})
-			);
-	}
-
-	cancel() {
-		if (this.#input) this.#input.value = "";
-		this.close();
-	}
-
-	onClose() {
-		if (this.#callback && this.#input) { this.#callback(this.#input.value); }
-		this.contentEl.empty();
-	}
-
-	setValueCallback(callback: (s: string) => void) {
-		this.#callback = callback;
-		return this;
-	}
-}
-
-class InterceptedSet extends Set<CanvasNode> {
-	#mapPinSubtype: string;
-	constructor(data: Array<CanvasNode>, mapPinSubtype: string) {
-		super(data);
-		this.#mapPinSubtype = mapPinSubtype;
-	}
-	add(v: CanvasNode): this {
-		if (v.unknownData.subtype !== this.#mapPinSubtype) {
-			return super.add(v);
-		}
-		return this;
 	}
 }

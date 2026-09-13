@@ -102,5 +102,3 @@ export class CanvasMapPinSettingsTab extends PluginSettingTab {
 		return regex.test(filename);
 	}
 }
-
-
